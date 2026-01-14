@@ -17,7 +17,7 @@
 - Thinking some sort of green-based theme/style.
 - OPTIONAL: Your year in spending and/or distribution graph by individual (Just some basic queries but could be cool).
 - Ability to form "groups" of friends.
-- Ability to toggle a preference platform.
+- Ability to toggle a preferred platform.
 - Light/Dark themes + follow accessibility guidelines.
 - Use the devices' location settings to grab the business at where the transaction occurred (OPTIONAL with user consent).
 - Persist login states.
