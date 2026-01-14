@@ -27,6 +27,8 @@
 - Ability to favorite friends and search through friends list.
 - Friend request/accept/suggest interface based off of your Venmo/PayPal/etc... friends. Similar to add contacts in other apps. Also pull contact data in.
 - NGINX proxy and set IP's for ssh.
+- HASH SENSITIVE DATA (PHONE NUMBERS and EMAIL for example).
+- S3 Bucket policy, set ec2 security groups.
 
 
 ## IF NOT ENOUGH FEATURES:
