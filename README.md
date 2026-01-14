@@ -26,7 +26,7 @@
 - Input validation on all input boxes and sanitize any data before it reaches the backend.
 - Ability to favorite friends and search through friends list.
 - Friend request/accept/suggest interface based off of your Venmo/PayPal/etc... friends. Similar to add contacts in other apps. Also pull contact data in.
-
+- NGINX proxy and set IP's for ssh.
 
 
 ## IF NOT ENOUGH FEATURES:
