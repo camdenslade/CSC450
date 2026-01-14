@@ -1,10 +1,10 @@
 # CSC450 Stack:
-- RN,
+- React Native,
 - AWS EC2 and S3,
 - Postgres,
 - RN Firebase Auth (Custom non-hosted UI),
-- Nest,
-- TS
+- Nest.js,
+- TypeScript
 
 # Premise:
 - Split bill by image capture [capture the bill amount] with text input fallback. 
