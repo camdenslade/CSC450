@@ -1,6 +1,6 @@
 # CSC450 Stack:
 - React Native,
-- AWS EC2 and S3,
+- AWS EC2, S3, Secrets Manager,
 - Postgres,
 - RN Firebase Auth (Custom non-hosted UI),
 - Nest.js,
