@@ -21,16 +21,24 @@
 - Light/Dark themes + follow accessibility guidelines.
 - Use the devices' location settings to grab the business at where the transaction occurred (OPTIONAL with user consent).
 - Persist login states.
-- Capture (maybe email?)/phone number on initial account creation.
+- Capture (maybe email if we can figure out how to use Firebase auth for BOTH)/phone number on initial account creation.
 - Profile image stored in S3, use pre-signed URLS generated in the backend.
 - Input validation on all input boxes and sanitize any data before it reaches the backend.
 - Ability to favorite friends and search through friends list.
 - Friend request/accept/suggest interface based off of your Venmo/PayPal/etc... friends. Similar to add contacts in other apps. Also pull contact data in.
-- NGINX proxy + allowed ssh IP's.
 
 
 
 ## IF NOT ENOUGH FEATURES:
 Save restaurant data globally and by user, allow reviews or ratings of restaurants available on a yelp-like "community page" but bill split is primary feature.
+
+
+## (POSSIBLE) COLOR SCHEME
+
+- #a0eec0
+- #8ae9c1
+- #86cd82
+- #72a276
+- #666b6a
 
 
