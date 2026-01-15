@@ -1,0 +1,34 @@
+{
+  "name": "csc450",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "description": "- React Native,\r - AWS EC2, S3, Secrets Manager,\r - Postgres,\r - RN Firebase Auth (Custom non-hosted UI),\r - Nest.js,\r - TypeScript\r - TypeORM",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/camdenslade/CSC450.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/camdenslade/CSC450/issues"
+  },
+  "homepage": "https://github.com/camdenslade/CSC450#readme",
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.2.0",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.6"
+  }
+}
