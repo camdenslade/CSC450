@@ -1,12 +1,12 @@
 // apps/mobile/src/App.tsx
-import { StatusBar } from 'expo-status-bar';
-import { View, Text } from 'react-native';
+import { StatusBar } from "expo-status-bar";
+import { HomeScreen } from "./home/HomeScreen";
 
 export default function App() {
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-      <Text>Splittr</Text>
-      <StatusBar style="auto" />
-    </View>
+    <>
+      <StatusBar style="light" />
+      <HomeScreen />
+    </>
   );
 }

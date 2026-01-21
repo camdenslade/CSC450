@@ -1,4 +1,4 @@
-# CSC450 Stack:
+# TabUp Stack:
 - React Native,
 - AWS EC2, S3, Secrets Manager,
 - Postgres,
