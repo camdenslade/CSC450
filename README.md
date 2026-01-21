@@ -5,6 +5,8 @@
 - RN Firebase Auth (Custom non-hosted UI),
 - Nest.js,
 - TypeScript
+- TypeORM
+- Jest
 
 # Premise:
 - Split bill by image capture [capture the bill amount] with text input fallback. 
