@@ -7,6 +7,7 @@
 - TypeScript
 - TypeORM
 - Jest
+- Expo
 
 # Premise:
 - Split bill by image capture [capture the bill amount] with text input fallback. 
