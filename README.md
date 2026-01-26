@@ -1,34 +1,45 @@
-﻿# TabUp
+# TabUp Stack:
+- React Native,
+- AWS EC2, S3, Secrets Manager,
+- Postgres,
+- RN Firebase Auth (Custom non-hosted UI),
+- Nest.js,
+- TypeScript
+- TypeORM
+- Jest
+- Expo
 
-## What TabUp is
-- A friend-first bill-splitting experience that captures receipts, lets people choose a preferred payout platform, and nudges them to settle without ever touching the funds ourselves.
-- The mobile shell focuses on the landing/home experience; the backend pieces noted in `docs/` are placeholders that will eventually power auth, tab history, and notification delivery.
+# Premise:
+- Split bill by image capture [capture the bill amount] with text input fallback. 
+- Select from "friends" list and then select the platform by logo from the dropdown on the card.
+- Even split option vs custom split option [slider or text box?].
+## Research how we can send requests to each major service to request funds. WE DO NOT HANDLE THE MONEY.
+- Use Apple Push Notifications if recipient also has our app installed, send a notification that if clicked opens the request in the specific app.
+- Otherwise fall back to Twilio's SMS since AWS SNS registration is unneeded for this scope.
+- Introduce a past bills ledger with the split for each individual as history.
+- Thinking some sort of green-based theme/style.
+- OPTIONAL: Your year in spending and/or distribution graph by individual (Just some basic queries but could be cool).
+- Ability to form "groups" of friends.
+- Ability to toggle a preferred platform.
+- Light/Dark themes + follow accessibility guidelines.
+- Use the devices' location settings to grab the business at where the transaction occurred (OPTIONAL with user consent).
+- Persist login states.
+- Capture (maybe email if we can figure out how to use Firebase auth for BOTH)/phone number on initial account creation.
+- Profile image stored in S3, use pre-signed URLS generated in the backend.
+- Input validation on all input boxes and sanitize any data before it reaches the backend.
+- Ability to favorite friends and search through friends list.
+- Friend request/accept/suggest interface based off of your Venmo/PayPal/etc... friends. Similar to add contacts in other apps. Also pull contact data in.
+- NGINX proxy and set IP's for ssh.
+- HASH SENSITIVE DATA (PHONE NUMBERS and EMAIL for example).
+- S3 Bucket policy, set ec2 security groups.
 
-## Technical stack
-- React Native/Expo mobile client (uses shared components in `apps/mobile/src/shared`).
-- Nest.js API scaffold (outlined in `docs/architecture.md`) with TypeScript, TypeORM, and Postgres.
-- AWS services: EC2 hosts the API behind an NGINX proxy, S3 stores receipts + avatars via presigned URLs, Secrets Manager keeps creds secure, and security groups + bucket policies limit exposure.
-- Notifications: Firebase Auth for identity, push via APNs/FCM when both users have the app, Twilio SMS as the fallback reminder channel.
-- Ancillary packages: Jest for future tests, shared DTOs in `packages/shared-types`, and planned infra in `infrastructure/`.
 
-## User flows & features
-- Build a tab by photographing the bill (OCR) or entering amounts manually, choose friends, and select a payout platform per person via the logo dropdown.
-- Offer even-split and custom-split modes (slider or text input) while keeping totals validated and sanitized before they hit the backend.
-- Present a ledger of past tabs with per-person splits, favorites, and search through friends imported from contacts plus Venmo/PayPal-style friend requests.
-- Provide group creation, preferred platform toggles, and profile metadata (avatar stored in S3, contact captured on signup) so the future API can match notifications to the right channel.
-- Optional location use (with consent) to capture the restaurant where each transaction happened and surface that in the history.
+## IF NOT ENOUGH FEATURES:
+Save restaurant data globally and by user, allow reviews or ratings of restaurants available on a yelp-like "community page" but bill split is primary feature.
 
-## Security, validation, and infra
-- Hash sensitive personally identifiable information (phone numbers, email) before persistence.
-- Enforce input validation on every form field, sanitize data entering the backend, and persist login state so sessions survive app restarts.
-- Configure bucket policies, EC2/NGINX security groups, and Secrets Manager to avoid leaking keys while still allowing direct S3 uploads via presigned URLs.
 
-## Research & optional ideas
-- Figure out how to request funds across every supported payout service without ever handling the money directly; this research informs the notification/settlement workflow.
-- Add a global+per-user restaurant directory with reviews to complement bill splitting (community page) if more feature room appears.
-- Explore year-in-spending or distribution graphs per person for insights on shared expenses.
+## (POSSIBLE) COLOR SCHEME
 
-## Visual palette
 - #a0eec0
 - #8ae9c1
 - #86cd82

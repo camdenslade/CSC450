@@ -55,7 +55,7 @@
 
 ## Backend/API status
 - `apps/api` only has empty module folders and `main.ts`; Nest.js/TypeORM/Postgres are planned but not scaffolded.
-- Next steps when you pick this up:
+- Next steps:
   - `npm create nest@latest` inside `apps/api`, align with planned modules (auth, bills, friends, groups, ledger, notifications, uploads, users).
   - Wire Secrets Manager + TypeORM/Postgres config; add JWT/Firebase auth adapter to match mobile.
   - Create shared DTOs in `packages/shared-types` and import from both API and mobile.
