@@ -45,5 +45,3 @@ Save restaurant data globally and by user, allow reviews or ratings of restauran
 - #86cd82
 - #72a276
 - #666b6a
-
-
