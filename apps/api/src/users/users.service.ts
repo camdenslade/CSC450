@@ -27,7 +27,7 @@ export class UsersService implements OnModuleInit {
     ) {}
 
     async onModuleInit(): Promise<void> {
-        this.hashSalt = await this.secrets.getSecret('phone_hash_salt', 'PHONE_HASH_SALT');
+        this.hashSalt = await this.secrets.getSecret('PHONE_HASH_SALT', 'PHONE_HASH_SALT');
         this.logger.log('UsersService initialized.');
     }
 
