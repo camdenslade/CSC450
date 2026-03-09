@@ -65,7 +65,7 @@ docker run --rm \
   -e DB_NAME="\$DB_NAME" \
   -e NODE_ENV=production \
   "${FULL_IMAGE}" \
-  npx typeorm migration:${MIGRATION_CMD} -d dist/apps/api/src/database/data-source.js
+  npx typeorm migration:${MIGRATION_CMD} -d dist/apps/api/database/data-source.js
 
 echo "migration:${MIGRATION_CMD} complete."
 EOF
