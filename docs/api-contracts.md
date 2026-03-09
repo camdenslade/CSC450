@@ -80,4 +80,4 @@ These contracts reflect the planned Nest.js REST API. All routes prefixed with `
 - `unauthorized`, `forbidden`, `validation_failed`, `not_found`, `duplicate_invite`, `unsupported_mime`, `limit_exceeded`.
 
 ## Versioning
-- Prefix with `/api/v1`. Breaking changes bump the version; clients should send `X-Client-Version` for telemetry and gradual rollout.
+- Prefix with `/api/v1`. Breaking changes bump the version.
