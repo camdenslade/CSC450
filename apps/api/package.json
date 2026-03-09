@@ -1,0 +1,15 @@
+{
+  "name": "@tabup/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node dist/apps/api/src/main.js",
+    "start:dev": "ts-node -r tsconfig-paths/register apps/api/src/main.ts",
+    "build": "tsc -p apps/api/tsconfig.app.json",
+    "test": "jest --config ../../jest.config.ts",
+    "test:watch": "jest --config ../../jest.config.ts --watch",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d apps/api/src/database/data-source.ts",
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d apps/api/src/database/data-source.ts",
+    "migration:show": "typeorm-ts-node-commonjs migration:show -d apps/api/src/database/data-source.ts"
+  }
+}
