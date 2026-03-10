@@ -16,17 +16,29 @@ export class SecretsService implements OnModuleInit {
     private readonly region = process.env.AWS_REGION || 'us-east-1';
     private readonly secretsPrefix = process.env.SECRETS_PREFIX || 'tabup';
 
-    // This method is called once the module has been initialized
-    onModuleInit(): void {
+    // This method is called once the module has been initialized.
+    // Fetches the single JSON blob secret at `secretsPrefix` and pre-populates
+    // the cache so all getSecret() calls resolve instantly without individual lookups.
+    async onModuleInit(): Promise<void> {
         try {
-            this.client = new SecretsManagerClient({
-                region: this.region,
-            });
+            this.client = new SecretsManagerClient({ region: this.region });
             this.logger.log('SecretsManagerClient initialized successfully.');
+
+            const response = await this.client.send(
+                new GetSecretValueCommand({ SecretId: this.secretsPrefix, VersionStage: 'AWSCURRENT' }),
+            );
+
+            if (response.SecretString) {
+                const blob = JSON.parse(response.SecretString) as Record<string, string>;
+                for (const [key, value] of Object.entries(blob)) {
+                    this.secretsCache.set(`${key}:${key}`, value);
+                }
+                this.logger.log(`Pre-loaded ${Object.keys(blob).length} secrets from "${this.secretsPrefix}".`);
+            }
         } catch (error) {
             this.logger.warn(
-                `Failed to initialize SecretsManagerClient. Secrets will not be retrievable. Error: ${error}`,
-            )
+                `Failed to initialize SecretsManagerClient or load secrets blob. Falling back to env vars. Error: ${error}`,
+            );
         }
     }
 
