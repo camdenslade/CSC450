@@ -31,7 +31,7 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
             migrations:  [__dirname + '/migrations/*.{ts,js}'],
             synchronize: false, // always use migrations, never auto-sync
             ssl:         process.env.NODE_ENV === 'production'
-                ? { rejectUnauthorized: true }
+                ? { rejectUnauthorized: false }
                 : false,
             logging:       process.env.NODE_ENV !== 'production',
             migrationsRun: false,
