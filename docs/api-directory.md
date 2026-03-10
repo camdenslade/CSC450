@@ -281,5 +281,4 @@ Allowed MIME types: `image/jpeg`, `image/jpg`, `image/png`, `image/webp`. Max si
 
 ## Versioning
 
-Current version: `v1`. Breaking changes increment the version prefix. Clients should send
-`X-Client-Version` for telemetry and gradual rollout support.
+Current version: `v1`. Breaking changes increment the version prefix.

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 1. Build locally so we can catch compile issues before touching the server.
+# 2. Pull the latest code on the EC2 host, install deps, run migrations, and restart the service.
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Load deploy config
