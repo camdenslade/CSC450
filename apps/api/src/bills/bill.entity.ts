@@ -20,7 +20,7 @@ export class Bill extends BaseEntity {
     @Column({ length: 120 })
     name: string;
 
-    @Column({ nullable: true, length: 160 })
+    @Column({ type: 'varchar', nullable: true, length: 160 })
     location: string | null;
 
     // All monetary values stored in cents to avoid floating-point issues
@@ -36,11 +36,11 @@ export class Bill extends BaseEntity {
     @Column({ length: 3, default: 'USD' })
     currency: string;
 
-    @Column({ nullable: true, length: 500 })
+    @Column({ type: 'varchar', nullable: true, length: 500 })
     notes: string | null;
 
     // S3 key for the receipt photo
-    @Column({ name: 'receipt_s3_key', nullable: true, length: 512 })
+    @Column({ name: 'receipt_s3_key', type: 'varchar', nullable: true, length: 512 })
     receiptS3Key: string | null;
 
     @Column({

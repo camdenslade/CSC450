@@ -18,7 +18,7 @@ export class Group extends BaseEntity {
     @Column({ length: 80 })
     name: string;
 
-    @Column({ name: 'avatar_s3_key', nullable: true, length: 512 })
+    @Column({ name: 'avatar_s3_key', type: 'varchar', nullable: true, length: 512 })
     avatarS3Key: string | null;
 
     @OneToMany(() => GroupMember, (m) => m.group, { cascade: true })
