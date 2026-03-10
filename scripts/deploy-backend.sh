@@ -30,18 +30,21 @@ if [[ ! -f "$SSH_KEY" ]]; then
 fi
 
 # ---------------------------------------------------------
-# 1. Sync source to EC2 (excludes generated/local-only dirs)
+# 1. Sync source to EC2 via tar over SSH (no rsync needed locally)
 # ---------------------------------------------------------
 echo "Syncing source to ${REMOTE_HOST}:${REMOTE_DIR} ..."
-rsync -az --delete \
-  --exclude '.git' \
-  --exclude 'node_modules' \
-  --exclude 'dist' \
-  --exclude '*.env' \
-  --exclude 'tabup-key.pem' \
-  -e "ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no" \
-  "$ROOT_DIR/" \
-  "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/"
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" \
+  "mkdir -p ${REMOTE_DIR}"
+
+tar -C "$ROOT_DIR" \
+  --exclude='.git' \
+  --exclude='node_modules' \
+  --exclude='dist' \
+  --exclude='*.env' \
+  --exclude='tabup-key.pem' \
+  -czf - . \
+  | ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" \
+      "tar -xzf - -C ${REMOTE_DIR}"
 
 # ---------------------------------------------------------
 # 2. Build image on EC2 and (re)start container
