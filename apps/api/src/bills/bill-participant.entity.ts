@@ -26,11 +26,11 @@ export class BillParticipant extends BaseEntity {
     user: User | null;
 
     // External contact fields - only populated when user_id is null
-    @Column({ name: 'contact_name', nullable: true, length: 80 })
+    @Column({ name: 'contact_name', type: 'varchar', nullable: true, length: 80 })
     contactName: string | null;
 
     // Hashed the same way as user.phoneHash for privacy consistency
-    @Column({ name: 'contact_phone_hash', nullable: true, length: 64 })
+    @Column({ name: 'contact_phone_hash', type: 'varchar', nullable: true, length: 64 })
     contactPhoneHash: string | null;
 
     @Column({ type: 'enum', enum: Platform })
@@ -50,7 +50,7 @@ export class BillParticipant extends BaseEntity {
     state: ParticipantState;
 
     // Pre-generated payment URL for this participant to pay the bill owner
-    @Column({ name: 'payment_link', nullable: true, length: 1024 })
+    @Column({ name: 'payment_link', type: 'varchar', nullable: true, length: 1024 })
     paymentLink: string | null;
 
     @Column({ name: 'reminders_sent', type: 'int', default: 0 })

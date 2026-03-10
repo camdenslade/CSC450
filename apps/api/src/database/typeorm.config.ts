@@ -12,11 +12,11 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
     constructor(private readonly secrets: SecretsService) {}
 
     async createTypeOrmOptions(): Promise<TypeOrmModuleOptions> {
-        const host     = await this.secrets.getSecret('db-host', 'DB_HOST');
-        const port     = await this.secrets.getSecret('db-port', 'DB_PORT');
-        const username = await this.secrets.getSecret('db-user', 'DB_USER');
-        const password = await this.secrets.getSecret('db-pass', 'DB_PASS');
-        const database = await this.secrets.getSecret('db-name', 'DB_NAME');
+        const host     = await this.secrets.getSecret('DB_HOST', 'DB_HOST');
+        const port     = await this.secrets.getSecret('DB_PORT', 'DB_PORT');
+        const username = await this.secrets.getSecret('DB_USER', 'DB_USER');
+        const password = await this.secrets.getSecret('DB_PASS', 'DB_PASS');
+        const database = await this.secrets.getSecret('DB_NAME', 'DB_NAME');
 
         this.logger.log(`Connecting to Postgres at ${host}:${port}/${database}`);
 
@@ -31,7 +31,7 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
             migrations:  [__dirname + '/migrations/*.{ts,js}'],
             synchronize: false, // always use migrations, never auto-sync
             ssl:         process.env.NODE_ENV === 'production'
-                ? { rejectUnauthorized: true }
+                ? { rejectUnauthorized: false }
                 : false,
             logging:       process.env.NODE_ENV !== 'production',
             migrationsRun: false,

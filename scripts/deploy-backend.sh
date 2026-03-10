@@ -5,42 +5,74 @@ set -euo pipefail
 # 2. Pull the latest code on the EC2 host, install deps, run migrations, and restart the service.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Load deploy config
+DEPLOY_ENV="${ROOT_DIR}/scripts/deploy.env"
+if [[ -f "$DEPLOY_ENV" ]]; then
+  # shellcheck source=/dev/null
+  source "$DEPLOY_ENV"
+fi
+
 SSH_KEY="${SSH_KEY:-$ROOT_DIR/tabup-key.pem}"
 REMOTE_USER="${REMOTE_USER:-ubuntu}"
 REMOTE_HOST="${REMOTE_HOST:-3.80.28.75}"
-REMOTE_PATH="${REMOTE_PATH:-/home/ubuntu/tabup}"
-REMOTE_BRANCH="${REMOTE_BRANCH:-backend}"
 REMOTE_SERVICE="${REMOTE_SERVICE:-tabup-api}"
 
-readonly LOCAL_PACKAGE="@tabup/api"
+AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-}"
+AWS_REGION="${AWS_REGION:-us-east-1}"
+ECR_REPO="${ECR_REPO:-tabup-api}"
+IMAGE_TAG="${IMAGE_TAG:-$(git -C "$ROOT_DIR" rev-parse --short HEAD)}"
+
+ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
+LATEST_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:latest"
+
+if [[ -z "$AWS_ACCOUNT_ID" ]]; then
+  echo "AWS_ACCOUNT_ID is required. Add it to scripts/deploy.env or export it." >&2
+  exit 1
+fi
 
 if [[ ! -f "$SSH_KEY" ]]; then
   echo "SSH key not found at $SSH_KEY" >&2
   exit 1
 fi
 
-echo "Installing/updating dependencies locally..."
-npm install
+# Build from repo root so Dockerfile context resolves correctly
+cd "$ROOT_DIR"
 
-echo "Building $LOCAL_PACKAGE..."
-npm run --workspace "$LOCAL_PACKAGE" build
+echo "Building Docker image..."
+docker build -t "${ECR_REPO}:${IMAGE_TAG}" .
+docker tag "${ECR_REPO}:${IMAGE_TAG}" "$FULL_IMAGE"
+docker tag "${ECR_REPO}:${IMAGE_TAG}" "$LATEST_IMAGE"
 
-echo "Deploying to ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH} (branch ${REMOTE_BRANCH})"
+echo "Pushing to ECR..."
+aws ecr get-login-password --region "$AWS_REGION" \
+  | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+docker push "$FULL_IMAGE"
+docker push "$LATEST_IMAGE"
+
+# echo "Running migrations on ${REMOTE_HOST}..."
+# IMAGE_TAG="$IMAGE_TAG" bash "${ROOT_DIR}/scripts/migrate.sh"
+
+echo "Deploying ${FULL_IMAGE} to ${REMOTE_USER}@${REMOTE_HOST}..."
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" bash -s <<EOF
 set -euo pipefail
-cd "$REMOTE_PATH"
-git fetch origin "$REMOTE_BRANCH"
-git reset --hard "origin/$REMOTE_BRANCH"
-npm install --production
-npm run --workspace "$LOCAL_PACKAGE" build
-npm run --workspace "$LOCAL_PACKAGE" migration:run
-if command -v pm2 >/dev/null 2>&1; then
-  pm2 reload "$REMOTE_SERVICE" || pm2 start --name "$REMOTE_SERVICE" -- npm --workspace "$LOCAL_PACKAGE" start
-elif sudo systemctl list-units --full --all | grep -q "${REMOTE_SERVICE}.service"; then
-  sudo systemctl restart "$REMOTE_SERVICE"
-else
-  echo "WARN: Could not detect pm2 or systemd-managed service; restart '$REMOTE_SERVICE' manually."
-fi
+
+aws ecr get-login-password --region "${AWS_REGION}" \
+  | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+
+docker pull "${FULL_IMAGE}"
+
+docker stop "${REMOTE_SERVICE}" 2>/dev/null || true
+docker rm   "${REMOTE_SERVICE}" 2>/dev/null || true
+
+docker run -d \
+  --name "${REMOTE_SERVICE}" \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  "${FULL_IMAGE}"
+
+docker image prune -f
 EOF
 
-echo "Deployment finished."
+echo "Deployment finished. Running image: ${FULL_IMAGE}"

@@ -29,7 +29,7 @@ export class AuthService implements OnModuleInit {
 
         try {
             const serviceAccountJson = await this.secrets.getSecret(
-                'firebase-service-account',
+                'FIREBASE_SERVICE_ACCOUNT',
                 'FIREBASE_SERVICE_ACCOUNT',
             );
 

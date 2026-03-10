@@ -37,7 +37,7 @@ export class S3Service implements OnModuleInit {
     async onModuleInit(): Promise<void> {
         const bucket =
             process.env.AWS_S3_BUCKET ??
-            (await this.secretsService.getSecret('s3-bucket', 'AWS_S3_BUCKET'));
+            (await this.secretsService.getSecret('AWS_S3_BUCKET', 'AWS_S3_BUCKET'));
 
         if (!bucket) {
             throw new Error('Missing required configuration: AWS_S3_BUCKET');
