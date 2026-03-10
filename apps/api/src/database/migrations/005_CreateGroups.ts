@@ -2,8 +2,8 @@
 
 import { MigrationInterface, QueryRunner, Table, TableIndex } from 'typeorm';
 
-export class CreateGroups005 implements MigrationInterface {
-    name = 'CreateGroups005';
+export class CreateGroups0051700000005000 implements MigrationInterface {
+    name = 'CreateGroups0051700000005000';
 
     async up(qr: QueryRunner): Promise<void> {
         await qr.createTable(new Table({

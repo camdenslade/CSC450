@@ -2,8 +2,8 @@
 
 import { MigrationInterface, QueryRunner, Table, TableIndex } from 'typeorm';
 
-export class CreateFriends002 implements MigrationInterface {
-    name = 'CreateFriends002';
+export class CreateFriends0021700000002000 implements MigrationInterface {
+    name = 'CreateFriends0021700000002000';
 
     async up(qr: QueryRunner): Promise<void> {
         await qr.createTable(new Table({

@@ -2,8 +2,8 @@
 
 import { MigrationInterface, QueryRunner, Table, TableIndex } from 'typeorm';
 
-export class CreateBills003 implements MigrationInterface {
-    name = 'CreateBills003';
+export class CreateBills0031700000003000 implements MigrationInterface {
+    name = 'CreateBills0031700000003000';
 
     async up(qr: QueryRunner): Promise<void> {
         await qr.createTable(new Table({

@@ -7,8 +7,8 @@ import {
     TableIndex,
 } from 'typeorm';
 
-export class CreateUsersAndHandles001 implements MigrationInterface {
-    name = 'CreateUsersAndHandles001';
+export class CreateUsersAndHandles0011700000001000 implements MigrationInterface {
+    name = 'CreateUsersAndHandles0011700000001000';
 
     async up(qr: QueryRunner): Promise<void> {
         await qr.createTable(new Table({
