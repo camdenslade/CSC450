@@ -48,8 +48,8 @@ aws ecr get-login-password --region "$AWS_REGION" \
 docker push "$FULL_IMAGE"
 docker push "$LATEST_IMAGE"
 
-echo "Running migrations on ${REMOTE_HOST}..."
-IMAGE_TAG="$IMAGE_TAG" bash "${ROOT_DIR}/scripts/migrate.sh"
+# echo "Running migrations on ${REMOTE_HOST}..."
+# IMAGE_TAG="$IMAGE_TAG" bash "${ROOT_DIR}/scripts/migrate.sh"
 
 echo "Deploying ${FULL_IMAGE} to ${REMOTE_USER}@${REMOTE_HOST}..."
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" bash -s <<EOF
