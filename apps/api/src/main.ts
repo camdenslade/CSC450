@@ -79,7 +79,7 @@ async function bootstrap(): Promise<void> {
 
     app.enableCors({
         origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-            // No Origin header means mobile app, Postman, or server-to-server - allow it
+            // No Origin header means mobile app, Postman, or server-to-server
             if (!origin) return callback(null, true);
 
             const normalized = origin.replace(/\/$/, '');
