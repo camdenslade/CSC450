@@ -10,7 +10,7 @@ import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { FirebaseAuthGuard } from './common/guards/firebase-auth.guard';
 
-// Load .env for local dev - Secrets Manager takes precedence on EC2
+// Load .env for local dev but Secrets Manager takes precedence on EC2
 config();
 
 const AWS_REGION_PATTERN = /^[a-z]{2}(-[a-z]+){1,3}-\d+$/;
@@ -29,7 +29,7 @@ async function bootstrap(): Promise<void> {
         bodyParser: true,
     });
 
-    // Security headers - applied first so every response is covered
+    // Security headers are applied first so every response is covered
     app.use(
         helmet({
             contentSecurityPolicy: {
@@ -61,7 +61,6 @@ async function bootstrap(): Promise<void> {
     app.useGlobalFilters(new GlobalExceptionFilter());
     app.useGlobalInterceptors(new LoggingInterceptor());
 
-    // Global Firebase auth guard - routes decorated with @Public() skip it
     const reflector = app.get(Reflector);
     app.useGlobalGuards(new FirebaseAuthGuard(reflector));
 
