@@ -1,60 +1,97 @@
-﻿# TabUp Architecture
+# TabUp Architecture
 
 ## System overview
-- Mobile app (Expo/React Native) is the primary client. It authenticates with Firebase Auth (email/phone, custom UI) and calls a REST API.
-- Backend will be a Nest.js service running on AWS EC2 behind NGINX. Data is stored in Postgres via TypeORM. Binary assets (receipt photos, profile avatars) live in S3 with pre-signed URLs.
-- Notifications: push (APNs/FCM via Expo or native modules) when both users have the app; SMS fallback via Twilio for reminders and invites.
-- Secrets (DB creds, JWT keys, Twilio tokens, S3 keys) managed in AWS Secrets Manager and injected at runtime.
+- Mobile app (Expo/React Native) authenticates with Firebase Auth and calls a NestJS REST API.
+- API runs in a Docker container on a single EC2 instance. Data is stored in Postgres (self-hosted on the same EC2). Binary assets (receipts, avatars) go to S3 with pre-signed URLs.
+- TabUp never handles money. The API generates deep links (PayPal, Venmo, CashApp) that route payments directly between users.
+- Secrets managed in AWS Secrets Manager as a single JSON blob named `tabup`.
 
-## Codebase layout (logical)
-- `apps/mobile` — client UI + future API hooks. Shared UI primitives in `src/shared`; theming in `src/theme`.
-- `apps/api` — Nest.js service (to be scaffolded) with modules: auth, users, friends, bills/tabs, groups, ledger, notifications, uploads.
-- `packages/shared-types` — DTOs and response contracts consumed by both mobile and API.
-- `infrastructure` — IaC placeholders for EC2, NGINX, S3, and security (SGs, bucket policy).
+## Codebase layout
+```
+apps/mobile/        - Expo/React Native client
+apps/api/           - NestJS API (active, deployed)
+packages/shared-types/  - Cross-package TypeScript types (stub)
+infrastructure/     - IaC placeholders
+docs/               - This documentation
+scripts/            - Deploy, migrate, restart scripts
+```
 
-## Core flows
-- **Start a tab**: user captures bill (camera/upload), enters totals, selects friends, chooses payout platform per friend, sets even/custom split → API persists tab, items, participants, and requested amounts; returns share links and notification schedule.
-- **Remind/settle**: backend sends push/SMS reminders; status updates feed the ledger and home activity list.
-- **Ledger/history**: read-only timeline of tabs, with per-user balances and group rollups.
+## Backend module structure
+```
+apps/api/src/
+  main.ts                  - Bootstrap: Helmet, ValidationPipe, CORS, global guard
+  app.module.ts            - Root module
+  app.controller.ts        - GET /api/status (public health check)
+  common/
+    base.entity.ts         - UUID PK, createdAt, updatedAt
+    enums.ts               - Platform, FriendStatus, BillStatus, ParticipantState, etc.
+    filters/               - GlobalExceptionFilter
+    interceptors/          - LoggingInterceptor
+    guards/                - FirebaseAuthGuard (global), ownership helpers
+    decorators/            - @Public(), @CurrentUser()
+  database/
+    data-source.ts         - TypeORM CLI data source (migrations)
+    typeorm.config.ts      - Async factory pulling secrets at runtime
+    migrations/            - 001-005 (all applied)
+  secrets/                 - SecretsService: lazy-loads JSON blob from Secrets Manager
+  auth/                    - POST /api/v1/auth/exchange (Firebase token -> user record)
+  users/                   - Profile CRUD, device registration
+  payments/                - Handle management + PayPal/Venmo/CashApp link generation
+  friends/                 - Friend requests via hashed phone/email lookup
+  bills/                   - Tab creation, splits, settle, cancel
+  ledger/                  - Paginated ledger history
+  groups/                  - Group creation and membership
+  uploads/                 - S3 presign for receipt/avatar uploads
+  notifications/           - Stub (push + Twilio SMS planned)
+```
 
-## Data model sketch (API-side)
-- Users: id, auth_provider_uid, display_name, avatar_url, phone_hash, email_hash, default_platform.
-- Friends: user_id, friend_user_id, status (invited/accepted/blocked), source (contacts/imported/manual).
-- Tabs/Bills: id, owner_id, location, total_amount, tax, tip, created_at, status (open/settled/cancelled).
-- TabParticipants: tab_id, user_id (or external contact), platform, share_amount, paid_amount, state, reminders_sent.
-- LedgerEntries: tab_id, user_id, delta (+owed / -owes), settled_at.
-- Uploads: id, tab_id, s3_key, mime_type, size, created_at.
+## Data model
+- **users**: id, auth_provider_uid, display_name, avatar_s3_key, phone_hash, email_hash, default_platform, push_token, push_platform
+- **payment_handles**: user_id, platform, handle, verified_at
+- **friends**: requester_id, recipient_id, status, source
+- **bills**: owner_id, name, location, total_cents, tax_cents, tip_cents, currency, notes, receipt_s3_key, status
+- **bill_participants**: bill_id, user_id (nullable), contact_name, contact_phone_hash, platform, share_cents, paid_cents, state, payment_link, reminders_sent, settled_at
+- **ledger_entries**: user_id, bill_id, delta_cents, settled_at
+- **groups**: owner_id, name, avatar_s3_key
+- **group_members**: group_id, user_id, joined_at
+
+All monetary values stored in cents (integer). Phone/email hashed with HMAC-SHA256 + Secrets Manager salt.
 
 ## Runtime architecture
-- NGINX terminates TLS and routes `/api/*` to the Nest.js app. Static asset requests (if any) can be served via S3/CloudFront.
-- Nest.js layers: controller → service → repository (TypeORM) → Postgres. Domain events can enqueue notifications jobs (future: queue like SQS).
-- Mobile app talks to API over HTTPS and S3 directly for uploads/downloads using pre-signed URLs.
+- EC2 instance (t-series, Ubuntu) running Docker.
+- `tabup-api` container: NestJS on port 3000, exposed directly (no NGINX).
+- Postgres running natively on the same EC2 host; container reaches it via `172.17.0.1` (Docker bridge gateway).
+- S3 for binary assets; pre-signed PUT URLs generated server-side, client uploads directly.
+- AWS Secrets Manager (single JSON blob `tabup`) provides all runtime secrets.
+- EC2 IAM role (`tabup-ec2-role`) grants read access to Secrets Manager and ECR.
 
-## Environments
-- Local: Expo dev server + mocked API or localhost Nest.js with Dockerized Postgres.
-- Dev/staging: single EC2 instance, managed Postgres (RDS), Twilio sandbox numbers, test Firebase project, dev S3 bucket with restrictive CORS.
-- Prod: autoscaled API (later), RDS with backups, prod Firebase project, prod S3 bucket with lifecycle rules, NGINX WAF ruleset.
+## Security hardening
+- Helmet: CSP, noSniff, frameguard, hidePoweredBy, HSTS (prod), referrerPolicy
+- @nestjs/throttler: 100 req/min global, 10 req/min on /auth/exchange
+- ValidationPipe: whitelist + forbidNonWhitelisted + transform
+- Firebase token verification with checkRevoked=true
+- FirebaseAuthGuard applied globally; @Public() skips it
+- No raw PII stored (phone/email hashed); no PII in logs
+- Handle format validated before URL construction (SSRF prevention)
+- Memo sanitized before embedding in payment URLs
+- TypeORM parameterized queries
+- SSL required for DB in production (rejectUnauthorized: false for self-signed cert)
 
-## Observability (planned)
-- Request logging with structured JSON (Nest.js interceptors).
-- Basic metrics: request latency, error rate, notification success, S3 upload failures.
-- Alerting on auth errors, push/SMS failure spikes, DB error rate.
+## Payment link formats
+- PayPal: `https://paypal.me/{handle}/{amount_in_dollars}`
+- Venmo: `venmo://paycharge?txn=pay&recipients={handle}&amount={amount}&note={note}` (web fallback via venmo.com)
+- CashApp: `https://cash.app/%24{handle}/{amount_in_dollars}`
 
-## Frontend architectural notes
-- Keep screens small and compose from shared components (`Layout`, `NavBar`, `Section`, etc.).
-- State management: start simple with React hooks; introduce a lightweight query/client (e.g., tanstack/query) once API endpoints exist.
-- Navigation: NavBar currently stubbed; adopt React Navigation when multi-screen flows are implemented.
+## Deployment
+- Source synced to EC2 via tar over SSH (`scripts/deploy-backend.sh`) - no local Docker required.
+- Image built on EC2, container restarted in place.
+- Migrations run via `scripts/migrate.sh` (or `--migrate` flag on deploy).
+- Restart without rebuild: `scripts/restart.sh`.
 
-## Backend architectural notes
-- Modular Nest.js: each domain (auth, friends, tabs, groups, ledger, notifications, uploads) as a module with DTOs exported to `packages/shared-types`.
-- Validation via `class-validator` pipes; global exception filter for consistent API errors.
-- Security: JWT or Firebase ID token verification middleware; per-resource authorization checks in guards.
-- File uploads: presign + S3 direct upload; store metadata only; validate mime/size before presign.
-
-## Dependencies and boundaries
-- Mobile consumes only `/api` and S3 presigned URLs; it should never see raw secrets.
-- Backend depends on AWS (S3, Secrets Manager), Twilio, Firebase; keep provider adapters isolated behind interfaces for swap/black-box testing.
-
-## Known gaps (Jan 22, 2026)
-- API not yet scaffolded; no CI/CD, no infra automation, no real data wiring in the mobile app.
-- Navigation, auth session handling, and error states are not implemented in the client.
+## Planned / not yet implemented
+- NGINX / TLS termination (currently HTTP only on port 3000)
+- Push notifications (APNs/FCM via Expo)
+- Twilio SMS reminders
+- CI/CD pipeline
+- Multi-instance / auto-scaling
+- Mobile API integration (currently mock data)

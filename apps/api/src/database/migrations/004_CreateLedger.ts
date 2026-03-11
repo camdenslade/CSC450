@@ -2,8 +2,8 @@
 
 import { MigrationInterface, QueryRunner, Table, TableIndex } from 'typeorm';
 
-export class CreateLedger004 implements MigrationInterface {
-    name = 'CreateLedger004';
+export class CreateLedger0041700000004000 implements MigrationInterface {
+    name = 'CreateLedger0041700000004000';
 
     async up(qr: QueryRunner): Promise<void> {
         await qr.createTable(new Table({

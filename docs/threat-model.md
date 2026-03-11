@@ -1,46 +1,69 @@
-﻿# TabUp Threat Model (draft)
+# TabUp Threat Model
 
-Scope covers the mobile app, planned Nest.js API, AWS resources (EC2, RDS/Postgres, S3, Secrets Manager), Twilio SMS, and Firebase Auth.
+Scope: mobile app (Expo/React Native), NestJS API (EC2/Docker), Postgres (EC2), S3, AWS Secrets Manager, Firebase Auth.
 
 ## Assets
-- PII: phone numbers, emails, display names, avatars.
-- Auth tokens: Firebase ID tokens, API JWTs, refresh tokens.
-- Tab data: bill amounts, locations, participant lists, payment platform preferences.
-- Media: receipt images and profile images in S3.
-- Secrets: DB creds, JWT keys, Twilio tokens, S3 keys.
+- PII: display names, avatars. Phone/email hashed before storage and never persisted in plaintext.
+- Auth tokens: Firebase ID tokens (short-lived, checked for revocation).
+- Tab data: bill amounts, locations, participant lists, payment platform handles.
+- Media: receipt images and avatars in S3.
+- Secrets: DB creds, Firebase service account, S3 bucket, phone hash salt - all in Secrets Manager.
 
 ## Actors & entry points
-- Users via mobile app over HTTPS.
-- Backend admins via SSH/console.
-- Third-party providers: Firebase, Twilio, AWS.
-- Adversaries: network eavesdroppers, stolen devices, malicious invitees, spam bots, and compromised admin accounts.
+- Users via mobile app over HTTP (HTTPS planned).
+- Backend admins via SSH to EC2.
+- Third-party providers: Firebase, AWS, payment platforms.
+- Adversaries: network eavesdroppers (currently mitigated only at DB level), stolen devices, malicious participants, spam bots.
 
-## Threats & mitigations (STRIDE-lite)
-- **Spoofing / Auth**: Use Firebase Auth; validate ID tokens/JWT on every request; short-lived tokens with refresh; device binding optional for push tokens.
-- **Tampering**: All traffic over TLS; HSTS at NGINX; request validation (`class-validator`) and strict content-type. Hash phone/email before storage; never store raw secrets in code or client.
-- **Repudiation**: Structured request logging with requestId; keep audit fields (createdBy/updatedBy) on tabs and ledger entries.
-- **Information disclosure**: Scope data to owner/participant via authorization guards; avoid exposing contact info of others; pre-signed URLs short-lived and purpose-scoped; S3 buckets private with least-privilege IAM.
-- **Denial of service**: Rate-limit auth, invites, and uploads at NGINX/app; size limits on uploads; graceful fallbacks on provider outages (queue retries with backoff).
-- **Elevation of privilege**: Role-based checks (owner vs participant); server-side enforcement of tab mutations; do not trust client-calculated shares.
+## Threats & mitigations (STRIDE)
+
+**Spoofing / Auth**
+- Firebase ID tokens verified on every request with `checkRevoked: true`.
+- FirebaseAuthGuard applied globally; only explicitly `@Public()` routes bypass it.
+- No long-lived API tokens issued.
+
+**Tampering**
+- Helmet: CSP, noSniff, frameguard, HSTS (in production), referrerPolicy.
+- ValidationPipe: whitelist + forbidNonWhitelisted on all request bodies.
+- Phone/email hashed with HMAC-SHA256 + per-deployment salt (Secrets Manager); raw values never stored or logged.
+- Server-side share validation: participant shares must sum to bill total.
+- Payment handle format validated before URL construction (SSRF prevention).
+- Memo sanitized before embedding in payment URLs.
+
+**Repudiation**
+- Structured request logging with `requestId` on every request and error response.
+- `createdAt` / `updatedAt` on all entities.
+
+**Information disclosure**
+- Resource access scoped to owner or registered participant via `assertOwner()` guards.
+- S3 objects accessed only via short-lived presigned URLs generated server-side.
+- No raw PII in logs or error responses.
+- DB SSL enabled (`rejectUnauthorized: false` for self-signed cert).
+
+**Denial of service**
+- @nestjs/throttler: 100 req/min global, 10 req/min on auth/exchange.
+- Upload size capped at 10 MB; MIME type allowlist enforced before presign.
+
+**Elevation of privilege**
+- Owner-only mutations (settle, split, cancel) enforced server-side.
+- EC2 IAM role scoped to read-only Secrets Manager access - no ability to write/delete secrets.
+- TypeORM parameterized queries prevent SQL injection.
 
 ## Abuse cases
-- **Invite/notification spam**: per-user/day invite quotas, captcha or proof-of-work on unauth’d flows, opt-out for SMS, blocklist handling.
-- **Phishing via links**: Only generate signed deep links with expiry; show sender name in the link landing screen.
-- **Receipt upload malware**: Accept only images; strip EXIF; content-length caps; consider AV scanning/Lambda in future.
+- **Notification spam**: per-user invite quotas planned; SMS opt-out needed before Twilio goes live.
+- **Phishing via payment links**: links generated server-side with validated handles only; no user-supplied URLs.
+- **Receipt upload malware**: MIME type allowlist + size cap enforced; EXIF stripping and AV scanning planned.
 
 ## Data protection
-- At rest: RDS encryption, S3 SSE, Secrets Manager for secrets. Hash (bcrypt/argon2) phone/email for lookup; avoid logging raw PII.
-- In transit: TLS 1.2+, pinned domains, no HTTP downgrade.
+- At rest: Postgres on EC2 (no RDS encryption at this tier); S3 SSE; Secrets Manager encrypted by default.
+- In transit: DB uses SSL; API currently HTTP only (TLS termination via NGINX/ALB planned).
+- Secrets: single JSON blob in Secrets Manager; EC2 IAM role grants read-only access; never in code or env files.
 
-## Device loss
-- Encourage OS-level biometrics on app entry; allow remote session revocation; avoid long-lived refresh tokens on device if not needed.
-
-## Operations
-- Principle of least privilege IAM roles for API, workers, and CI.
-- Backups for Postgres with tested restore; S3 lifecycle rules to reduce blast radius.
-- Monitoring/alerts on auth failures, push/SMS failure spikes, and anomalous invite rates.
-
-## Current gaps (Jan 22, 2026)
-- No server implementation yet → token verification, rate limiting, logging, and audit trails are not in place.
-- No CI/CD or secrets wiring; infra folders are placeholders.
-- Mobile app lacks session persistence, logout, and error handling flows.
+## Current gaps (March 2026)
+- No TLS on the API (HTTP only on port 3000) - NGINX or ALB with ACM cert needed before production traffic.
+- No push notifications or SMS yet.
+- Mobile app uses mock data and has no API integration yet.
+- No CI/CD pipeline.
+- No automated backups for self-hosted Postgres.
+- No monitoring/alerting (auth failures, error rate spikes).
+- No session revocation flow on the mobile client.

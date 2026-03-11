@@ -1,78 +1,108 @@
 #!/usr/bin/env bash
+# Deploy the API to EC2 by rsyncing source and building the Docker image on the server.
+# No local Docker installation required.
+#
+# Usage:
+#   ./scripts/deploy-backend.sh           # build + deploy
+#   ./scripts/deploy-backend.sh --migrate # build + run migrations + deploy
 set -euo pipefail
-
-# 1. Build locally so we can catch compile issues before touching the server.
-# 2. Pull the latest code on the EC2 host, install deps, run migrations, and restart the service.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Load deploy config
 DEPLOY_ENV="${ROOT_DIR}/scripts/deploy.env"
-if [[ -f "$DEPLOY_ENV" ]]; then
-  # shellcheck source=/dev/null
-  source "$DEPLOY_ENV"
-fi
+[[ -f "$DEPLOY_ENV" ]] && source "$DEPLOY_ENV"
 
 SSH_KEY="${SSH_KEY:-$ROOT_DIR/tabup-key.pem}"
 REMOTE_USER="${REMOTE_USER:-ubuntu}"
 REMOTE_HOST="${REMOTE_HOST:-3.80.28.75}"
 REMOTE_SERVICE="${REMOTE_SERVICE:-tabup-api}"
-
-AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
-ECR_REPO="${ECR_REPO:-tabup-api}"
-IMAGE_TAG="${IMAGE_TAG:-$(git -C "$ROOT_DIR" rev-parse --short HEAD)}"
+REMOTE_DIR="${REMOTE_DIR:-/home/ubuntu/tabup}"
+RUN_MIGRATIONS=false
 
-ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
-LATEST_IMAGE="${ECR_REGISTRY}/${ECR_REPO}:latest"
-
-if [[ -z "$AWS_ACCOUNT_ID" ]]; then
-  echo "AWS_ACCOUNT_ID is required. Add it to scripts/deploy.env or export it." >&2
-  exit 1
-fi
+for arg in "$@"; do
+  [[ "$arg" == "--migrate" ]] && RUN_MIGRATIONS=true
+done
 
 if [[ ! -f "$SSH_KEY" ]]; then
   echo "SSH key not found at $SSH_KEY" >&2
   exit 1
 fi
 
-# Build from repo root so Dockerfile context resolves correctly
-cd "$ROOT_DIR"
+# ---------------------------------------------------------
+# 1. Sync source to EC2 via tar over SSH (no rsync needed locally)
+# ---------------------------------------------------------
+echo "Syncing source to ${REMOTE_HOST}:${REMOTE_DIR} ..."
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" \
+  "mkdir -p ${REMOTE_DIR}"
 
-echo "Building Docker image..."
-docker build -t "${ECR_REPO}:${IMAGE_TAG}" .
-docker tag "${ECR_REPO}:${IMAGE_TAG}" "$FULL_IMAGE"
-docker tag "${ECR_REPO}:${IMAGE_TAG}" "$LATEST_IMAGE"
+tar -C "$ROOT_DIR" \
+  --exclude='.git' \
+  --exclude='node_modules' \
+  --exclude='dist' \
+  --exclude='*.env' \
+  --exclude='tabup-key.pem' \
+  -czf - . \
+  | ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" \
+      "tar -xzf - -C ${REMOTE_DIR}"
 
-echo "Pushing to ECR..."
-aws ecr get-login-password --region "$AWS_REGION" \
-  | docker login --username AWS --password-stdin "$ECR_REGISTRY"
-docker push "$FULL_IMAGE"
-docker push "$LATEST_IMAGE"
-
-# echo "Running migrations on ${REMOTE_HOST}..."
-# IMAGE_TAG="$IMAGE_TAG" bash "${ROOT_DIR}/scripts/migrate.sh"
-
-echo "Deploying ${FULL_IMAGE} to ${REMOTE_USER}@${REMOTE_HOST}..."
-ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" bash -s <<EOF
+# ---------------------------------------------------------
+# 2. Build image on EC2 and (re)start container
+# ---------------------------------------------------------
+echo "Building and deploying on ${REMOTE_HOST}..."
+ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" bash -s \
+  "$REMOTE_DIR" "$REMOTE_SERVICE" "$AWS_REGION" "$RUN_MIGRATIONS" <<'ENDSSH'
 set -euo pipefail
 
-aws ecr get-login-password --region "${AWS_REGION}" \
-  | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+REMOTE_DIR="$1"
+REMOTE_SERVICE="$2"
+AWS_REGION="$3"
+RUN_MIGRATIONS="$4"
 
-docker pull "${FULL_IMAGE}"
+cd "$REMOTE_DIR"
 
-docker stop "${REMOTE_SERVICE}" 2>/dev/null || true
-docker rm   "${REMOTE_SERVICE}" 2>/dev/null || true
+echo "Building Docker image..."
+docker build -t "${REMOTE_SERVICE}:latest" .
 
+if [[ "$RUN_MIGRATIONS" == "true" ]]; then
+  echo "Running migrations..."
+  # Parse DB credentials from the single JSON blob in Secrets Manager
+  SECRET_JSON=$(aws secretsmanager get-secret-value \
+    --region "$AWS_REGION" \
+    --secret-id "tabup" \
+    --query SecretString \
+    --output text)
+
+  DB_HOST=$(echo "$SECRET_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['DB_HOST'])")
+  DB_PORT=$(echo "$SECRET_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['DB_PORT'])")
+  DB_USER=$(echo "$SECRET_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['DB_USER'])")
+  DB_PASS=$(echo "$SECRET_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['DB_PASS'])")
+  DB_NAME=$(echo "$SECRET_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['DB_NAME'])")
+
+  docker run --rm \
+    -e DB_HOST="$DB_HOST" \
+    -e DB_PORT="$DB_PORT" \
+    -e DB_USER="$DB_USER" \
+    -e DB_PASS="$DB_PASS" \
+    -e DB_NAME="$DB_NAME" \
+    -e NODE_ENV=production \
+    "${REMOTE_SERVICE}:latest" \
+    npx typeorm migration:run -d dist/apps/api/database/data-source.js
+fi
+
+echo "Restarting container..."
+docker stop  "$REMOTE_SERVICE" 2>/dev/null || true
+docker rm    "$REMOTE_SERVICE" 2>/dev/null || true
 docker run -d \
-  --name "${REMOTE_SERVICE}" \
+  --name "$REMOTE_SERVICE" \
   --restart unless-stopped \
   -p 3000:3000 \
-  "${FULL_IMAGE}"
+  -e NODE_ENV=production \
+  -e AWS_REGION="$AWS_REGION" \
+  "${REMOTE_SERVICE}:latest"
 
 docker image prune -f
-EOF
+echo "Done. Container ${REMOTE_SERVICE} is running."
+ENDSSH
 
-echo "Deployment finished. Running image: ${FULL_IMAGE}"
+echo "Deployment complete. API is live at http://${REMOTE_HOST}:3000/api/status"
