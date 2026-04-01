@@ -2,15 +2,20 @@
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { colors } from "../../theme/colors";
 
-export function PrimaryActions() {
+type PrimaryActionsProps = {
+    onCreateTab?: () => void;
+    onViewTabs?: () => void;
+};
+
+export function PrimaryActions({ onCreateTab, onViewTabs }: PrimaryActionsProps) {
     return (
         <View style={styles.container}>
             {/* These serve as our main two buttons on the home screen */}
-            <Pressable style={[styles.button, styles.primary]}>
+            <Pressable style={[styles.button, styles.primary]} onPress={onCreateTab}>
                 <Text style={styles.primaryText}>Start New Tab</Text>
             </Pressable>
 
-            <Pressable style={[styles.button, styles.secondary]}>
+            <Pressable style={[styles.button, styles.secondary]} onPress={onViewTabs}>
                 <Text style={styles.secondaryText}>View Existing Tabs</Text>
             </Pressable>
         </View>

@@ -49,14 +49,15 @@ const activityItems: ActivityItem[] = [
 ];
 // [END] Filler data to get a rough visual
 
-export function HomeScreen() {
-  const handleTabPress = (tab: TabKey) => {
-    // Hook up to navigation when available, log for now
-    console.log("Tab pressed:", tab);
-  };
+type HomeScreenProps = {
+  onTabPress?: (tab: TabKey) => void;
+  onCreateTab?: () => void;
+  onViewTabs?: () => void;
+};
 
+export function HomeScreen({ onTabPress, onCreateTab, onViewTabs }: HomeScreenProps) {
   return (
-    <Layout activeTab="Home" onTabPress={handleTabPress}>
+    <Layout activeTab="Home" onTabPress={onTabPress}>
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -67,7 +68,7 @@ export function HomeScreen() {
           subtitle="Split restaurant and bar tabs."
         />
         <BalanceCard />
-        <PrimaryActions />
+        <PrimaryActions onCreateTab={onCreateTab} onViewTabs={onViewTabs} />
 
         <MetricsRow metrics={metrics} />
 
