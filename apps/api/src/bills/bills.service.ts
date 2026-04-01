@@ -115,6 +115,16 @@ export class BillsService {
         });
     }
 
+    /** @returns All bills where the caller is owner or participant, newest first. */
+    async listForUser(callerDbId: string): Promise<Bill[]> {
+        return this.bills
+            .createQueryBuilder('bill')
+            .leftJoinAndSelect('bill.participants', 'participant')
+            .where('bill.ownerId = :id OR participant.userId = :id', { id: callerDbId })
+            .orderBy('bill.createdAt', 'DESC')
+            .getMany();
+    }
+
     // Owner and participants can view; everyone else gets 403.
     async findOne(callerDbId: string, billId: string): Promise<Bill> {
         const bill = await this.bills.findOne({

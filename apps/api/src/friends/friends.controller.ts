@@ -33,6 +33,12 @@ export class FriendsController {
         return this.friendsService.listFriends(user.id);
     }
 
+    @Get('requests')
+    async listRequests(@CurrentUser() caller: AuthenticatedUser) {
+        const user = await this.usersService.getProfile(caller.uid);
+        return this.friendsService.listRequests(user.id);
+    }
+
     @Post('invite')
     async invite(
         @CurrentUser() caller: AuthenticatedUser,
