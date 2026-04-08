@@ -28,6 +28,12 @@ export class BillsController {
         private readonly usersService: UsersService,
     ) {}
 
+    @Get()
+    async findAll(@CurrentUser() caller: AuthenticatedUser) {
+        const user = await this.usersService.getProfile(caller.uid);
+        return this.billsService.listForUser(user.id);
+    }
+
     @Post()
     async create(
         @CurrentUser() caller: AuthenticatedUser,

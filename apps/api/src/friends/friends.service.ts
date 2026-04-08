@@ -25,6 +25,14 @@ export class FriendsService {
         private readonly usersService: UsersService,
     ) {}
 
+    /** @returns Pending friend requests where the caller is the recipient. */
+    async listRequests(callerDbId: string): Promise<Friend[]> {
+        return this.friends.find({
+            where: { recipientId: callerDbId, status: FriendStatus.PENDING },
+            relations: ['requester'],
+        });
+    }
+
     async listFriends(callerDbId: string): Promise<Friend[]> {
         return this.friends.find({
             where: [

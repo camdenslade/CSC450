@@ -4,3 +4,5 @@ tabup-key.pem
 scripts/deploy.env
 .env
 dist/
+apps/mobile/google-services.json
+apps/mobile/GoogleService-Info.plist

@@ -112,6 +112,9 @@ Generate a payment deep link.
 ### GET /api/v1/friends
 List accepted friends.
 
+### GET /api/v1/friends/requests
+List pending inbound friend requests (caller is recipient).
+
 ### POST /api/v1/friends/invite
 Send a friend request by phone or email. The raw value is hashed on arrival and never stored.
 ```json
@@ -129,6 +132,9 @@ Remove or reject. Returns 204.
 ---
 
 ## Tabs (Bills)
+
+### GET /api/v1/tabs
+List all tabs where the caller is owner or participant, newest first.
 
 ### POST /api/v1/tabs
 Create a tab. Participant shares must sum to `total`. Payment links generated at creation time if owner has a handle.
