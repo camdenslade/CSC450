@@ -1,127 +1,127 @@
 // apps/mobile/src/screens/friends/FriendsListScreen.tsx
-import { useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, Alert } from "react-native";
+import { useEffect, useState, useCallback } from "react";
+import { View, Text, StyleSheet, FlatList, Pressable, Alert, ActivityIndicator } from "react-native";
 import { Layout } from "../../shared/Layout";
 import { Section } from "../../home/components/Section";
 import { colors } from "../../theme/colors";
 import { TabKey } from "../../shared/NavBar";
+import { useAuth } from "../../auth/AuthContext";
+import { ApiFriend } from "../../api/client";
 
 type FriendsListScreenProps = {
   onTabPress?: (tab: TabKey) => void;
   onAddFriend?: () => void;
 };
 
-type Friend = {
-  id: string;
-  name: string;
-  balance: number;
-};
-
-type FriendRequest = {
-  id: string;
-  name: string;
-  email: string;
-};
-
-// Mock data for now
-const mockFriends: Friend[] = [
-  { id: "1", name: "Alex Johnson", balance: 12.5 },
-  { id: "2", name: "Sarah Chen", balance: -8.0 },
-  { id: "3", name: "Mike Rodriguez", balance: 0 },
-  { id: "4", name: "Emma Davis", balance: 15.75 },
-];
-
-const mockRequests: FriendRequest[] = [
-  { id: "1", name: "Jordan Taylor", email: "jordan@example.com" },
-  { id: "2", name: "Casey Martinez", email: "casey@example.com" },
-];
+/** Extract the "other" user from a friendship relative to the caller. */
+function otherUser(friend: ApiFriend, myUserId: string) {
+  return friend.requesterId === myUserId ? friend.recipient : friend.requester;
+}
 
 export function FriendsListScreen({ onTabPress, onAddFriend }: FriendsListScreenProps) {
-  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>(mockRequests);
+  const { apiClient, userId } = useAuth();
+  const [friends, setFriends] = useState<ApiFriend[]>([]);
+  const [requests, setRequests] = useState<ApiFriend[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleAcceptRequest = (requestId: string, name: string) => {
-    Alert.alert("Accept Request", `Accept friend request from ${name}?`, [
+  const loadData = useCallback(() => {
+    setLoading(true);
+    Promise.all([
+      apiClient.get<ApiFriend[]>("/friends"),
+      apiClient.get<ApiFriend[]>("/friends/requests"),
+    ])
+      .then(([f, r]) => { setFriends(f); setRequests(r); })
+      .catch((e: Error) => Alert.alert("Error", e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { loadData(); }, []);
+
+  function handleAccept(request: ApiFriend) {
+    const u = otherUser(request, userId!);
+    Alert.alert("Accept Request", `Accept friend request from ${u.displayName}?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Accept",
-        onPress: () => {
-          setFriendRequests(friendRequests.filter(r => r.id !== requestId));
-          Alert.alert("Success", `You are now friends with ${name}`);
+        onPress: async () => {
+          try {
+            await apiClient.post("/friends/accept", { friendId: request.id });
+            loadData();
+          } catch (e: unknown) {
+            Alert.alert("Error", e instanceof Error ? e.message : "Failed to accept.");
+          }
         },
       },
     ]);
-  };
+  }
 
-  const handleDeclineRequest = (requestId: string, name: string) => {
-    Alert.alert("Decline Request", `Decline friend request from ${name}?`, [
+  function handleDecline(request: ApiFriend) {
+    const u = otherUser(request, userId!);
+    Alert.alert("Decline Request", `Decline friend request from ${u.displayName}?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Decline",
         style: "destructive",
-        onPress: () => {
-          setFriendRequests(friendRequests.filter(r => r.id !== requestId));
-          Alert.alert("Declined", `Friend request from ${name} declined`);
+        onPress: async () => {
+          try {
+            await apiClient.del(`/friends/${request.id}`);
+            loadData();
+          } catch (e: unknown) {
+            Alert.alert("Error", e instanceof Error ? e.message : "Failed to decline.");
+          }
         },
       },
     ]);
-  };
+  }
 
-  const renderFriend = ({ item }: { item: Friend }) => {
-    const isOwed = item.balance > 0;
-    const isOwe = item.balance < 0;
-    const balanceText =
-      item.balance === 0
-        ? "Settled up"
-        : isOwed
-        ? `Owes you $${item.balance.toFixed(2)}`
-        : `You owe $${Math.abs(item.balance).toFixed(2)}`;
+  function handleRemove(friend: ApiFriend) {
+    const u = otherUser(friend, userId!);
+    Alert.alert("Remove Friend", `Remove ${u.displayName}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await apiClient.del(`/friends/${friend.id}`);
+            loadData();
+          } catch (e: unknown) {
+            Alert.alert("Error", e instanceof Error ? e.message : "Failed to remove.");
+          }
+        },
+      },
+    ]);
+  }
 
+  const renderFriend = ({ item }: { item: ApiFriend }) => {
+    const u = otherUser(item, userId!);
     return (
-      <Pressable style={styles.friendCard}>
+      <Pressable style={styles.friendCard} onLongPress={() => handleRemove(item)}>
         <View style={styles.friendInfo}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{item.name.charAt(0)}</Text>
+            <Text style={styles.avatarText}>{u.displayName.charAt(0).toUpperCase()}</Text>
           </View>
-          <View style={styles.friendDetails}>
-            <Text style={styles.friendName}>{item.name}</Text>
-            <Text
-              style={[
-                styles.balanceText,
-                isOwed && styles.balancePositive,
-                isOwe && styles.balanceNegative,
-              ]}
-            >
-              {balanceText}
-            </Text>
-          </View>
+          <Text style={styles.friendName}>{u.displayName}</Text>
         </View>
       </Pressable>
     );
   };
 
-  const renderRequest = ({ item }: { item: FriendRequest }) => {
+  const renderRequest = ({ item }: { item: ApiFriend }) => {
+    const u = otherUser(item, userId!);
     return (
       <View style={styles.requestCard}>
         <View style={styles.friendInfo}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{item.name.charAt(0)}</Text>
+            <Text style={styles.avatarText}>{u.displayName.charAt(0).toUpperCase()}</Text>
           </View>
-          <View style={styles.friendDetails}>
-            <Text style={styles.friendName}>{item.name}</Text>
-            <Text style={styles.requestEmail}>{item.email}</Text>
-          </View>
+          <Text style={styles.friendName}>{u.displayName}</Text>
         </View>
         <View style={styles.requestActions}>
-          <Pressable
-            style={styles.acceptButton}
-            onPress={() => handleAcceptRequest(item.id, item.name)}
-          >
+          <Pressable style={styles.acceptButton} onPress={() => handleAccept(item)}>
             <Text style={styles.acceptButtonText}>Accept</Text>
           </Pressable>
-          <Pressable
-            style={styles.declineButton}
-            onPress={() => handleDeclineRequest(item.id, item.name)}
-          >
+          <Pressable style={styles.declineButton} onPress={() => handleDecline(item)}>
             <Text style={styles.declineButtonText}>Decline</Text>
           </Pressable>
         </View>
@@ -133,138 +133,73 @@ export function FriendsListScreen({ onTabPress, onAddFriend }: FriendsListScreen
     <Layout activeTab="Friends" onTabPress={onTabPress}>
       <View style={styles.container}>
         <Text style={styles.title}>Friends</Text>
-
-        {/* Friend Requests Section */}
-        {friendRequests.length > 0 && (
-          <Section title="Friend Requests" actionLabel={`${friendRequests.length} pending`}>
-            <FlatList
-              data={friendRequests}
-              renderItem={renderRequest}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.listContent}
-            />
-          </Section>
+        {loading && <ActivityIndicator color={colors.primary} style={styles.spinner} />}
+        {!loading && (
+          <>
+            {requests.length > 0 && (
+              <Section title="Friend Requests" actionLabel={`${requests.length} pending`}>
+                <FlatList
+                  data={requests}
+                  renderItem={renderRequest}
+                  keyExtractor={(item) => item.id}
+                  scrollEnabled={false}
+                />
+              </Section>
+            )}
+            <Section title="Friends" actionLabel="Add" onActionPress={onAddFriend}>
+              {friends.length === 0 ? (
+                <Text style={styles.emptyText}>
+                  No friends yet. Tap Add to invite someone.
+                </Text>
+              ) : (
+                <FlatList
+                  data={friends}
+                  renderItem={renderFriend}
+                  keyExtractor={(item) => item.id}
+                  scrollEnabled={false}
+                  contentContainerStyle={styles.listContent}
+                />
+              )}
+            </Section>
+          </>
         )}
-
-        {/* All Friends Section */}
-        <Section title="All Friends" actionLabel="Add Friend" onActionPress={onAddFriend}>
-          <FlatList
-            data={mockFriends}
-            renderItem={renderFriend}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-          />
-        </Section>
       </View>
     </Layout>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  listContent: {
-    gap: 10,
-    paddingTop: 12,
-  },
+  container: { flex: 1 },
+  title: { fontSize: 28, fontWeight: "700", color: colors.textPrimary, marginBottom: 8 },
+  spinner: { marginTop: 40 },
+  emptyText: { color: colors.textMuted, marginTop: 12, lineHeight: 22 },
+  listContent: { gap: 10, paddingTop: 12 },
   friendCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    shadowColor: "#000000",
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: colors.surface, borderRadius: 14, padding: 14,
+    shadowColor: "#000", shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8, elevation: 2,
   },
-  friendInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  friendInfo: { flexDirection: "row", alignItems: "center", gap: 12 },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primary,
+    alignItems: "center", justifyContent: "center",
   },
-  avatarText: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#000",
-  },
-  friendDetails: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  friendName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  balanceText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: colors.textMuted,
-  },
-  balancePositive: {
-    color: colors.success,
-  },
-  balanceNegative: {
-    color: colors.error,
-  },
+  avatarText: { fontSize: 20, fontWeight: "700", color: "#000" },
+  friendName: { fontSize: 16, fontWeight: "600", color: colors.textPrimary },
   requestCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    shadowColor: "#000000",
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: colors.surface, borderRadius: 14, padding: 14, marginBottom: 10,
+    shadowColor: "#000", shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8, elevation: 2,
   },
-  requestEmail: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: colors.textMuted,
-  },
-  requestActions: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 10,
-  },
+  requestActions: { flexDirection: "row", gap: 8, marginTop: 10 },
   acceptButton: {
-    flex: 1,
-    backgroundColor: colors.primary,
-    paddingVertical: 8,
-    borderRadius: 10,
-    alignItems: "center",
+    flex: 1, backgroundColor: colors.primary, paddingVertical: 8,
+    borderRadius: 10, alignItems: "center",
   },
-  acceptButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#000",
-  },
+  acceptButtonText: { fontSize: 14, fontWeight: "600", color: "#000" },
   declineButton: {
-    flex: 1,
-    backgroundColor: colors.error + "20",
-    paddingVertical: 8,
-    borderRadius: 10,
-    alignItems: "center",
+    flex: 1, backgroundColor: colors.error + "20", paddingVertical: 8,
+    borderRadius: 10, alignItems: "center",
   },
-  declineButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.error,
-  },
+  declineButtonText: { fontSize: 14, fontWeight: "600", color: colors.error },
 });

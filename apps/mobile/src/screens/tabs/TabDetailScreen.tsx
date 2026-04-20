@@ -1,115 +1,132 @@
 // apps/mobile/src/screens/tabs/TabDetailScreen.tsx
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  View, Text, StyleSheet, ScrollView, Pressable,
+  Alert, ActivityIndicator, Linking,
+} from "react-native";
 import { colors } from "../../theme/colors";
-
-type Participant = {
-  id: string;
-  name: string;
-  amount: number;
-  status: "pending" | "paid" | "settled";
-};
+import { useAuth } from "../../auth/AuthContext";
+import { ApiBill, ApiBillParticipant } from "../../api/client";
 
 type TabDetailScreenProps = {
+  tabId: string;
   onBack: () => void;
 };
 
-// Mock tab data
-const mockTab = {
-  id: "1",
-  name: "Birthday Dinner",
-  location: "Blue Harbor",
-  date: "Friday, 7:30 PM",
-  total: 156.5,
-  status: "open" as const,
-  yourShare: 39.13,
-  isOwner: true,
-  participants: [
-    { id: "1", name: "You", amount: 39.13, status: "settled" as const },
-    { id: "2", name: "Alex Rodriguez", amount: 39.13, status: "paid" as const },
-    { id: "3", name: "Katie Davis", amount: 39.12, status: "pending" as const },
-    { id: "4", name: "Mike Johnson", amount: 39.12, status: "pending" as const },
-  ],
+const PLATFORM_LABELS: Record<string, string> = {
+  paypal: "PayPal",
+  venmo: "Venmo",
+  cashapp: "Cash App",
 };
 
-export function TabDetailScreen({ onBack }: TabDetailScreenProps) {
-  const handleMarkPaid = (participantId: string, participantName: string) => {
-    Alert.alert("Mark as Paid", `Mark ${participantName} as paid?`, [
+const STATE_LABELS: Record<string, string> = {
+  pending: "Pending",
+  reminded: "Reminded",
+  paid: "Paid",
+};
+
+export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
+  const { apiClient, userId } = useAuth();
+  const [bill, setBill] = useState<ApiBill | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  function loadBill() {
+    apiClient
+      .get<ApiBill>(`/tabs/${tabId}`)
+      .then(setBill)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { loadBill(); }, [tabId]);
+
+  function handleSettle(participant: ApiBillParticipant) {
+    const name = participant.user?.displayName ?? participant.contactName ?? "this person";
+    Alert.alert("Mark as Paid", `Mark ${name} as paid?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Mark Paid",
-        onPress: () => console.log(`Marked ${participantId} as paid`),
+        onPress: async () => {
+          try {
+            await apiClient.post(`/tabs/${tabId}/settle`, { participantId: participant.id });
+            loadBill();
+          } catch (e: unknown) {
+            Alert.alert("Error", e instanceof Error ? e.message : "Failed to settle.");
+          }
+        },
       },
     ]);
-  };
+  }
 
-  const handleRequestPayment = (participantName: string, amount: number) => {
-    Alert.alert(
-      "Request Payment",
-      `Send payment request to ${participantName} for $${amount.toFixed(2)}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Venmo",
-          onPress: () => console.log(`Venmo request sent to ${participantName}`),
+  function handleRequestPayment(participant: ApiBillParticipant) {
+    if (participant.paymentLink) {
+      Linking.openURL(participant.paymentLink).catch(() =>
+        Alert.alert("Error", "Could not open payment app."),
+      );
+      return;
+    }
+
+    if (!participant.userId) {
+      Alert.alert("No Link", "This participant has not registered a payment handle.");
+      return;
+    }
+
+    apiClient
+      .post<{ url: string }>("/payments/link", {
+        payeeUserId: participant.userId,
+        platform: participant.platform,
+        amountCents: participant.shareCents - participant.paidCents,
+        note: bill?.name ?? "Tab",
+      })
+      .then(({ url }) => Linking.openURL(url))
+      .catch((e: Error) => Alert.alert("Error", e.message));
+  }
+
+  function handleCancelTab() {
+    Alert.alert("Cancel Tab", "Are you sure you want to cancel this tab?", [
+      { text: "No", style: "cancel" },
+      {
+        text: "Cancel Tab",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await apiClient.del(`/tabs/${tabId}`);
+            onBack();
+          } catch (e: unknown) {
+            Alert.alert("Error", e instanceof Error ? e.message : "Failed to cancel.");
+          }
         },
-        {
-          text: "CashApp",
-          onPress: () => console.log(`CashApp request sent to ${participantName}`),
-        },
-      ]
+      },
+    ]);
+  }
+
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
     );
-  };
+  }
 
-  const handleSettleTab = () => {
-    Alert.alert("Settle Tab", "Mark this entire tab as settled?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Settle",
-        style: "destructive",
-        onPress: () => console.log("Tab settled"),
-      },
-    ]);
-  };
+  if (error || !bill) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorText}>{error || "Tab not found."}</Text>
+        <Pressable onPress={onBack} style={styles.backButton}>
+          <Text style={styles.backText}>Back</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
-  const handleDeleteTab = () => {
-    Alert.alert("Delete Tab", "Are you sure you want to delete this tab?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => {
-          console.log("Tab deleted");
-          onBack();
-        },
-      },
-    ]);
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "settled":
-        return colors.success;
-      case "paid":
-        return colors.primary;
-      case "pending":
-        return colors.textMuted;
-      default:
-        return colors.textMuted;
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case "settled":
-        return "Settled";
-      case "paid":
-        return "Paid";
-      case "pending":
-        return "Pending";
-      default:
-        return status;
-    }
-  };
+  const isOwner = bill.ownerId === userId;
+  const pendingParticipants = bill.participants.filter(
+    (p) => p.state !== "paid" && p.userId !== userId,
+  );
+  const settledParticipants = bill.participants.filter(
+    (p) => p.state === "paid" || p.userId === userId,
+  );
 
   return (
     <View style={styles.container}>
@@ -117,120 +134,112 @@ export function TabDetailScreen({ onBack }: TabDetailScreenProps) {
         {/* Header */}
         <View style={styles.header}>
           <Pressable onPress={onBack} style={styles.backButton}>
-            <Text style={styles.backText}>‹ Back</Text>
+            <Text style={styles.backText}>Back</Text>
           </Pressable>
-          <Text style={styles.title}>Tab Details</Text>
-        </View>
-
-        {/* Tab Info Card */}
-        <View style={styles.tabCard}>
-          <View style={styles.tabHeader}>
-            <Text style={styles.tabName}>{mockTab.name}</Text>
-            <View
-              style={[
-                styles.statusBadge,
-                mockTab.status === "open"
-                  ? styles.openBadge
-                  : styles.settledBadge,
-              ]}
-            >
-              <Text style={styles.statusText}>
-                {mockTab.status === "open" ? "Open" : "Settled"}
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>{bill.name}</Text>
+            <View style={[styles.statusBadge, bill.status !== "open" && styles.statusBadgeSettled]}>
+              <Text style={styles.statusBadgeText}>
+                {bill.status === "open" ? "Open" : "Settled"}
               </Text>
             </View>
           </View>
-
-          <Text style={styles.location}>{mockTab.location}</Text>
-          <Text style={styles.date}>{mockTab.date}</Text>
-
-          <View style={styles.divider} />
-
-          <View style={styles.totalsRow}>
-            <View style={styles.totalItem}>
-              <Text style={styles.totalLabel}>Total Bill</Text>
-              <Text style={styles.totalValue}>${mockTab.total.toFixed(2)}</Text>
-            </View>
-            <View style={styles.totalItem}>
-              <Text style={styles.totalLabel}>Your Share</Text>
-              <Text style={[styles.totalValue, styles.yourShareValue]}>
-                ${mockTab.yourShare.toFixed(2)}
-              </Text>
-            </View>
-          </View>
+          {bill.location && <Text style={styles.location}>{bill.location}</Text>}
         </View>
 
-        {/* Participants Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Participants ({mockTab.participants.length})</Text>
-
-          {mockTab.participants.map((participant) => (
-            <View key={participant.id} style={styles.participantCard}>
-              <View style={styles.participantInfo}>
-                <View style={styles.participantAvatar}>
-                  <Text style={styles.participantAvatarText}>
-                    {participant.name.charAt(0)}
-                  </Text>
-                </View>
-                <View style={styles.participantDetails}>
-                  <Text style={styles.participantName}>{participant.name}</Text>
-                  <Text style={styles.participantAmount}>
-                    ${participant.amount.toFixed(2)}
-                  </Text>
-                </View>
+        {/* Summary */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>Total</Text>
+          <Text style={styles.totalAmount}>${(bill.totalCents / 100).toFixed(2)}</Text>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Participants</Text>
+              <Text style={styles.summaryValue}>{bill.participants.length}</Text>
+            </View>
+            {bill.taxCents > 0 && (
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryLabel}>Tax</Text>
+                <Text style={styles.summaryValue}>${(bill.taxCents / 100).toFixed(2)}</Text>
               </View>
+            )}
+            {bill.tipCents > 0 && (
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryLabel}>Tip</Text>
+                <Text style={styles.summaryValue}>${(bill.tipCents / 100).toFixed(2)}</Text>
+              </View>
+            )}
+          </View>
+        </View>
 
-              <View style={styles.participantActions}>
-                <View
-                  style={[
-                    styles.participantStatus,
-                    { backgroundColor: getStatusColor(participant.status) + "20" },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.participantStatusText,
-                      { color: getStatusColor(participant.status) },
-                    ]}
-                  >
-                    {getStatusText(participant.status)}
-                  </Text>
-                </View>
-
-                {participant.name !== "You" && participant.status === "pending" && (
-                  <View style={styles.participantButtons}>
-                    <Pressable
-                      style={styles.smallButton}
-                      onPress={() =>
-                        handleRequestPayment(participant.name, participant.amount)
-                      }
-                    >
-                      <Text style={styles.smallButtonText}>Request</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.smallButton, styles.markPaidButton]}
-                      onPress={() => handleMarkPaid(participant.id, participant.name)}
-                    >
-                      <Text style={[styles.smallButtonText, styles.markPaidText]}>
-                        Mark Paid
-                      </Text>
-                    </Pressable>
+        {/* Awaiting payment */}
+        {pendingParticipants.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>Awaiting Payment</Text>
+            {pendingParticipants.map((p) => (
+              <View key={p.id} style={styles.participantRow}>
+                <View style={styles.participantInfo}>
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>
+                      {(p.user?.displayName ?? p.contactName ?? "?").charAt(0).toUpperCase()}
+                    </Text>
                   </View>
-                )}
+                  <View>
+                    <Text style={styles.participantName}>
+                      {p.user?.displayName ?? p.contactName ?? "Unknown"}
+                    </Text>
+                    <Text style={styles.participantMeta}>
+                      {PLATFORM_LABELS[p.platform]} · {STATE_LABELS[p.state]}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.participantRight}>
+                  <Text style={styles.participantAmount}>
+                    ${(p.shareCents / 100).toFixed(2)}
+                  </Text>
+                  {isOwner && bill.status === "open" && (
+                    <View style={styles.actionButtons}>
+                      <Pressable style={styles.requestButton} onPress={() => handleRequestPayment(p)}>
+                        <Text style={styles.requestButtonText}>Request</Text>
+                      </Pressable>
+                      <Pressable style={styles.settleButton} onPress={() => handleSettle(p)}>
+                        <Text style={styles.settleButtonText}>Paid</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
               </View>
-            </View>
-          ))}
-        </View>
-
-        {/* Action Buttons */}
-        {mockTab.isOwner && mockTab.status === "open" && (
-          <View style={styles.actions}>
-            <Pressable style={styles.primaryButton} onPress={handleSettleTab}>
-              <Text style={styles.primaryButtonText}>Settle Tab</Text>
-            </Pressable>
-            <Pressable style={styles.dangerButton} onPress={handleDeleteTab}>
-              <Text style={styles.dangerButtonText}>Delete Tab</Text>
-            </Pressable>
+            ))}
           </View>
+        )}
+
+        {/* Settled */}
+        {settledParticipants.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>Settled</Text>
+            {settledParticipants.map((p) => (
+              <View key={p.id} style={[styles.participantRow, styles.participantRowSettled]}>
+                <View style={styles.participantInfo}>
+                  <View style={[styles.avatar, styles.avatarSettled]}>
+                    <Text style={styles.avatarText}>
+                      {(p.user?.displayName ?? p.contactName ?? "?").charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <Text style={styles.participantNameMuted}>
+                    {p.user?.displayName ?? p.contactName ?? "Unknown"}
+                  </Text>
+                </View>
+                <Text style={styles.participantAmount}>
+                  ${(p.shareCents / 100).toFixed(2)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {isOwner && bill.status === "open" && (
+          <Pressable style={styles.cancelButton} onPress={handleCancelTab}>
+            <Text style={styles.cancelButtonText}>Cancel Tab</Text>
+          </Pressable>
         )}
       </ScrollView>
     </View>
@@ -238,215 +247,69 @@ export function TabDetailScreen({ onBack }: TabDetailScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: 16, paddingBottom: 40 },
+  centered: {
+    flex: 1, alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.background, padding: 24,
   },
-  content: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  header: {
-    marginBottom: 20,
-  },
-  backButton: {
-    marginBottom: 12,
-  },
-  backText: {
-    fontSize: 18,
-    color: colors.primary,
-    fontWeight: "600",
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: colors.textPrimary,
-  },
-  tabCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 20,
-    shadowColor: "#000000",
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  tabHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  tabName: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    flex: 1,
-  },
+  header: { marginBottom: 20 },
+  backButton: { marginBottom: 12 },
+  backText: { fontSize: 16, color: colors.primary, fontWeight: "600" },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 },
+  title: { fontSize: 26, fontWeight: "700", color: colors.textPrimary, flex: 1 },
+  location: { fontSize: 14, color: colors.textSecondary, fontWeight: "500" },
   statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+    backgroundColor: colors.primary, paddingHorizontal: 10,
+    paddingVertical: 4, borderRadius: 10,
   },
-  openBadge: {
-    backgroundColor: colors.primary,
+  statusBadgeSettled: { backgroundColor: colors.surface },
+  statusBadgeText: { fontSize: 12, fontWeight: "700", color: "#000" },
+  errorText: { color: colors.error, marginBottom: 16 },
+  card: {
+    backgroundColor: colors.surface, borderRadius: 14,
+    padding: 16, marginBottom: 14,
   },
-  settledBadge: {
-    backgroundColor: colors.success,
+  cardLabel: {
+    fontSize: 11, fontWeight: "700", color: colors.textMuted,
+    textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10,
   },
-  statusText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#000",
+  totalAmount: { fontSize: 32, fontWeight: "800", color: colors.primary, marginBottom: 12 },
+  summaryRow: { flexDirection: "row", gap: 20 },
+  summaryItem: {},
+  summaryLabel: { fontSize: 11, color: colors.textMuted, fontWeight: "600", marginBottom: 2 },
+  summaryValue: { fontSize: 14, fontWeight: "700", color: colors.textPrimary },
+  participantRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingVertical: 10, borderTopWidth: 1, borderTopColor: "#e5e9e6",
   },
-  location: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: colors.textSecondary,
-    marginBottom: 4,
+  participantRowSettled: { opacity: 0.55 },
+  participantInfo: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
+  avatar: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: colors.primary, alignItems: "center", justifyContent: "center",
   },
-  date: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: colors.textMuted,
+  avatarSettled: { backgroundColor: colors.textMuted },
+  avatarText: { fontSize: 14, fontWeight: "700", color: "#000" },
+  participantName: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
+  participantNameMuted: { fontSize: 15, fontWeight: "600", color: colors.textMuted },
+  participantMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  participantRight: { alignItems: "flex-end", gap: 6 },
+  participantAmount: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
+  actionButtons: { flexDirection: "row", gap: 6 },
+  requestButton: {
+    backgroundColor: colors.primary, paddingHorizontal: 10,
+    paddingVertical: 5, borderRadius: 8,
   },
-  divider: {
-    height: 1,
-    backgroundColor: "#e5e9e6",
-    marginVertical: 14,
+  requestButtonText: { fontSize: 12, fontWeight: "600", color: "#000" },
+  settleButton: {
+    borderWidth: 1, borderColor: colors.primary,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
   },
-  totalsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  settleButtonText: { fontSize: 12, fontWeight: "600", color: colors.primary },
+  cancelButton: {
+    marginTop: 10, paddingVertical: 14, borderRadius: 14,
+    alignItems: "center", borderWidth: 1.5, borderColor: colors.error,
   },
-  totalItem: {
-    flex: 1,
-  },
-  totalLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.textMuted,
-    marginBottom: 4,
-    textTransform: "uppercase",
-  },
-  totalValue: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.textPrimary,
-  },
-  yourShareValue: {
-    color: colors.primary,
-  },
-  section: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    marginBottom: 12,
-  },
-  participantCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  participantInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  participantAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  participantAvatarText: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#000",
-  },
-  participantDetails: {
-    flex: 1,
-  },
-  participantName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.textPrimary,
-    marginBottom: 2,
-  },
-  participantAmount: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.textSecondary,
-  },
-  participantActions: {
-    alignItems: "flex-end",
-  },
-  participantStatus: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginBottom: 6,
-  },
-  participantStatusText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  participantButtons: {
-    flexDirection: "row",
-    gap: 6,
-  },
-  smallButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  markPaidButton: {
-    backgroundColor: colors.success,
-  },
-  smallButtonText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#000",
-  },
-  markPaidText: {
-    color: "#fff",
-  },
-  actions: {
-    gap: 10,
-  },
-  primaryButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: "center",
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#000",
-  },
-  dangerButton: {
-    backgroundColor: colors.error,
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: "center",
-  },
-  dangerButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#fff",
-  },
+  cancelButtonText: { fontSize: 15, fontWeight: "600", color: colors.error },
 });

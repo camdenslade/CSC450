@@ -2,20 +2,24 @@
 import { View, Text, StyleSheet } from "react-native";
 import { colors } from "../../theme/colors";
 
-export function BalanceCard() {
-    const netBalance = 0; // mock value
-    const label = netBalance === 0 ? "All settled" : netBalance > 0 ? "You are owed" : "You owe";
+type BalanceCardProps = {
+  /** Net balance in cents. Positive = owed to you, negative = you owe. */
+  balanceCents?: number;
+};
+
+export function BalanceCard({ balanceCents = 0 }: BalanceCardProps) {
+    const label = balanceCents === 0 ? "All settled" : balanceCents > 0 ? "You are owed" : "You owe";
 
     return (
         <View style={styles.card}>
             <Text style={styles.label}>{label}</Text>
-            {netBalance !== 0 && (
+            {balanceCents !== 0 && (
                 <Text style={styles.amount}>
-                    ${Math.abs(netBalance).toFixed(2)}
+                    ${(Math.abs(balanceCents) / 100).toFixed(2)}
                 </Text>
             )}
         </View>
-    );    
+    );
 }
 
 const styles = StyleSheet.create({

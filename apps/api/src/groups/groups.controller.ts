@@ -16,6 +16,12 @@ export class GroupsController {
         private readonly usersService:  UsersService,
     ) {}
 
+    @Get()
+    async listGroups(@CurrentUser() caller: AuthenticatedUser) {
+        const user = await this.usersService.getProfile(caller.uid);
+        return this.groupsService.listForUser(user.id);
+    }
+
     @Post()
     async create(
         @CurrentUser() caller: AuthenticatedUser,

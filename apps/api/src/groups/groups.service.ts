@@ -16,6 +16,19 @@ export class GroupsService {
         private readonly members: Repository<GroupMember>,
     ) {}
 
+    /** @returns All groups the caller belongs to, newest first. */
+    async listForUser(callerDbId: string): Promise<Group[]> {
+        const memberships = await this.members.find({
+            where:     { userId: callerDbId },
+            relations: ['group', 'group.members', 'group.members.user'],
+        });
+        return memberships
+            .map((m) => m.group)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
+
+    // ---------------------------------------------------------
+
     // Creator is always added as a member regardless of memberIds.
     async create(ownerDbId: string, dto: CreateGroupDto): Promise<Group> {
         const group = await this.groups.save(
