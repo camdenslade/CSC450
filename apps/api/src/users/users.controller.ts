@@ -8,6 +8,7 @@ import {
     HttpStatus,
     Patch,
     Post,
+    Query,
     UseGuards,
 } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../common/guards/firebase-auth.guard';
@@ -25,6 +26,16 @@ export class UsersController {
     @Get('me')
     getProfile(@CurrentUser() caller: AuthenticatedUser) {
         return this.usersService.getProfile(caller.uid);
+    }
+
+    /** GET /v1/users/search?q=name - partial display-name search, excludes caller. */
+    @Get('search')
+    searchUsers(
+        @CurrentUser() caller: AuthenticatedUser,
+        @Query('q') q: string,
+    ) {
+        if (!q || q.trim().length < 2) return [];
+        return this.usersService.searchByName(caller.uid, q.trim());
     }
 
     @Patch('me')

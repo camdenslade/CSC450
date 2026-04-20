@@ -47,8 +47,11 @@ export class UsersService implements OnModuleInit {
 
     async updateProfile(uid: string, dto: UpdateUserDto): Promise<User> {
         const user = await this.getProfile(uid);
-        if (dto.displayName !== undefined)     user.displayName     = dto.displayName;
+        if (dto.displayName     !== undefined) user.displayName     = dto.displayName;
         if (dto.defaultPlatform !== undefined) user.defaultPlatform = dto.defaultPlatform;
+        // Hash contact values before storing - raw PII must never reach the DB
+        if (dto.phone !== undefined) user.phoneHash = this.hashContact(dto.phone);
+        if (dto.email !== undefined) user.emailHash = this.hashContact(dto.email);
         return this.users.save(user);
     }
 
@@ -64,6 +67,25 @@ export class UsersService implements OnModuleInit {
         user.avatarS3Key = s3Key;
         await this.users.save(user);
     }
+
+    /**
+     * Case-insensitive partial match on displayName.
+     * Excludes the calling user from results.
+     * @param callerUid Firebase UID of the requesting user
+     * @param query     Search string (min 2 chars enforced by controller)
+     */
+    async searchByName(callerUid: string, query: string): Promise<User[]> {
+        const caller = await this.getProfile(callerUid);
+        return this.users
+            .createQueryBuilder('user')
+            .where('LOWER(user.display_name) LIKE :q', { q: `%${query.toLowerCase()}%` })
+            .andWhere('user.id != :callerId', { callerId: caller.id })
+            .orderBy('user.display_name', 'ASC')
+            .take(20)
+            .getMany();
+    }
+
+    // ---------------------------------------------------------
 
     // HMAC-SHA256 with a per-deployment salt. Used before storing phone/email
     // so raw PII never hits the database.

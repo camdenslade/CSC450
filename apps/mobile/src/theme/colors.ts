@@ -15,4 +15,6 @@ export const colors = {
   textPrimary: "#ffffff",
   textSecondary: "#e6e6e6",
   textMuted: "#cfcfcf",
+
+  error: "#ff6b6b",
 };

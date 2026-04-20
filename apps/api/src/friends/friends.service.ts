@@ -43,6 +43,40 @@ export class FriendsService {
         });
     }
 
+    // Send a friend request directly by target user DB ID (used after a name search).
+    async inviteById(callerUid: string, targetUserId: string): Promise<Friend> {
+        const caller = await this.usersService.getProfile(callerUid);
+        if (caller.id === targetUserId) {
+            throw new BadRequestException('You cannot add yourself as a friend.');
+        }
+
+        const target = await this.users.findOne({ where: { id: targetUserId } });
+        if (!target) throw new NotFoundException('User not found.');
+
+        const existing = await this.friends.findOne({
+            where: [
+                { requesterId: caller.id, recipientId: target.id },
+                { requesterId: target.id, recipientId: caller.id },
+            ],
+        });
+
+        if (existing) {
+            if (existing.status === FriendStatus.ACCEPTED) throw new ConflictException('Already friends.');
+            if (existing.status === FriendStatus.PENDING)  throw new ConflictException('A friend request already exists.');
+        }
+
+        const record = this.friends.create({
+            requesterId: caller.id,
+            recipientId: target.id,
+            status:      FriendStatus.PENDING,
+            source:      FriendSource.MANUAL,
+        });
+
+        return this.friends.save(record);
+    }
+
+    // ---------------------------------------------------------
+
     // Hashes the contact value before lookup - raw PII never leaves this method.
     async invite(callerUid: string, dto: InviteFriendDto): Promise<Friend> {
         const caller = await this.usersService.getProfile(callerUid);

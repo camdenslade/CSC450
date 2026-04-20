@@ -16,6 +16,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../common/guards/firebase-auth.guard';
 import { FriendsService } from './friends.service';
 import { InviteFriendDto } from './dto/invite-friend.dto';
+import { InviteByIdDto } from './dto/invite-by-id.dto';
 import { AcceptFriendDto } from './dto/accept-friend.dto';
 import { UsersService } from '../users/users.service';
 
@@ -37,6 +38,15 @@ export class FriendsController {
     async listRequests(@CurrentUser() caller: AuthenticatedUser) {
         const user = await this.usersService.getProfile(caller.uid);
         return this.friendsService.listRequests(user.id);
+    }
+
+    /** Send a friend request by target user DB ID (after a name search). */
+    @Post('invite-by-id')
+    async inviteById(
+        @CurrentUser() caller: AuthenticatedUser,
+        @Body() dto: InviteByIdDto,
+    ) {
+        return this.friendsService.inviteById(caller.uid, dto.targetUserId);
     }
 
     @Post('invite')

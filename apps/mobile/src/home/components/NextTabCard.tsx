@@ -1,5 +1,5 @@
 // apps/mobile/src/home/components/NextTabCard.tsx
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
 import { colors } from "../../theme/colors";
 
 export type NextTab = {
@@ -12,9 +12,9 @@ export type NextTab = {
 };
 
 // Preview of the upcoming tab
-export function NextTabCard({ tab }: { tab: NextTab }) {
+export function NextTabCard({ tab, onPress }: { tab: NextTab; onPress?: () => void }) {
   return (
-    <View style={styles.nextTabCard}>
+    <Pressable style={styles.nextTabCard} onPress={onPress}>
       <View style={styles.nextTabTop}>
         <View style={styles.dateBadge}>
           <Text style={styles.dateBadgeText}>Fri</Text>
@@ -36,7 +36,7 @@ export function NextTabCard({ tab }: { tab: NextTab }) {
         ))}
         <Text style={styles.tabStatus}>{tab.status}</Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 

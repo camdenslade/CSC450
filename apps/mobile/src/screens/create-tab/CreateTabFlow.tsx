@@ -1,18 +1,26 @@
 // apps/mobile/src/screens/create-tab/CreateTabFlow.tsx
-import { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Alert } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  View, Text, StyleSheet, ScrollView, Pressable,
+  TextInput, Alert, ActivityIndicator,
+} from "react-native";
 import { colors } from "../../theme/colors";
+import { useAuth } from "../../auth/AuthContext";
+import { ApiFriend } from "../../api/client";
 
-type Friend = {
-  id: string;
-  name: string;
-  selected: boolean;
-};
+type Platform = "paypal" | "venmo" | "cashapp";
 
-type Participant = {
-  id: string;
+const PLATFORMS: { key: Platform; label: string }[] = [
+  { key: "venmo", label: "Venmo" },
+  { key: "paypal", label: "PayPal" },
+  { key: "cashapp", label: "Cash App" },
+];
+
+type ParticipantRow = {
+  userId: string;
   name: string;
-  amount: number;
+  amountStr: string;
+  platform: Platform;
 };
 
 type CreateTabFlowProps = {
@@ -20,109 +28,142 @@ type CreateTabFlowProps = {
   onComplete: () => void;
 };
 
-// Mock friends data
-const mockFriends: Friend[] = [
-  { id: "1", name: "Alex Rodriguez", selected: false },
-  { id: "2", name: "Sarah Chen", selected: false },
-  { id: "3", name: "Mike Johnson", selected: false },
-  { id: "4", name: "Katie Davis", selected: false },
-  { id: "5", name: "Emma Wilson", selected: false },
-  { id: "6", name: "Jordan Lee", selected: false },
-];
+/** Extract the "other" user from a friendship relative to the caller. */
+function otherUser(friend: ApiFriend, myUserId: string) {
+  return friend.requesterId === myUserId ? friend.recipient : friend.requester;
+}
 
 export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
-  const [step, setStep] = useState(1);
+  const { apiClient, userId } = useAuth();
 
-  // Step 1 state
+  const [step, setStep] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Step 1
   const [amount, setAmount] = useState("");
   const [tabName, setTabName] = useState("");
   const [location, setLocation] = useState("");
 
-  // Step 2 state
-  const [friends, setFriends] = useState<Friend[]>(mockFriends);
+  // Step 2
+  const [friends, setFriends] = useState<ApiFriend[]>([]);
+  const [friendsLoading, setFriendsLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Step 3 state
+  // Step 3
+  const [participants, setParticipants] = useState<ParticipantRow[]>([]);
   const [splitType, setSplitType] = useState<"even" | "custom">("even");
-  const [participants, setParticipants] = useState<Participant[]>([]);
 
-  const selectedFriends = friends.filter(f => f.selected);
-  const totalParticipants = selectedFriends.length + 1; // +1 for current user
   const billAmount = parseFloat(amount) || 0;
 
-  const handleStep1Next = () => {
+  // Load friends when the user reaches step 2
+  useEffect(() => {
+    if (step !== 2 || friends.length > 0) return;
+    setFriendsLoading(true);
+    apiClient
+      .get<ApiFriend[]>("/friends")
+      .then(setFriends)
+      .catch((e: Error) => Alert.alert("Error", e.message))
+      .finally(() => setFriendsLoading(false));
+  }, [step]);
+
+  // ---------------------------------------------------------
+  // Step handlers
+  // ---------------------------------------------------------
+  function handleStep1Next() {
     if (!amount || parseFloat(amount) <= 0) {
-      Alert.alert("Error", "Please enter a valid bill amount");
+      Alert.alert("Error", "Please enter a valid bill amount.");
       return;
     }
     setStep(2);
-  };
+  }
 
-  const handleStep2Next = () => {
-    if (selectedFriends.length === 0) {
-      Alert.alert("Error", "Please select at least one friend");
+  function handleStep2Next() {
+    if (selectedIds.size === 0) {
+      Alert.alert("Error", "Please select at least one friend.");
       return;
     }
+    const totalPeople = selectedIds.size + 1; // +1 for current user
+    const evenAmount = billAmount / totalPeople;
 
-    // Initialize participants with yourself + selected friends
-    const initialParticipants: Participant[] = [
-      { id: "me", name: "You", amount: billAmount / totalParticipants },
-      ...selectedFriends.map(f => ({
-        id: f.id,
-        name: f.name,
-        amount: billAmount / totalParticipants,
-      })),
-    ];
-    setParticipants(initialParticipants);
+    const rows: ParticipantRow[] = [];
+
+    // Current user row
+    rows.push({ userId: userId!, name: "You", amountStr: evenAmount.toFixed(2), platform: "venmo" });
+
+    // Selected friends
+    for (const id of selectedIds) {
+      const f = friends.find((fr) => (otherUser(fr, userId!)).id === id);
+      if (!f) continue;
+      const u = otherUser(f, userId!);
+      rows.push({ userId: u.id, name: u.displayName, amountStr: evenAmount.toFixed(2), platform: "venmo" });
+    }
+
+    setParticipants(rows);
     setStep(3);
-  };
+  }
 
-  const handleToggleFriend = (friendId: string) => {
-    setFriends(friends.map(f =>
-      f.id === friendId ? { ...f, selected: !f.selected } : f
-    ));
-  };
+  function toggleFriend(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
-  const handleSelectAll = () => {
-    const allSelected = friends.every(f => f.selected);
-    setFriends(friends.map(f => ({ ...f, selected: !allSelected })));
-  };
-
-  const handleSplitTypeChange = (type: "even" | "custom") => {
+  function handleSplitTypeChange(type: "even" | "custom") {
     setSplitType(type);
     if (type === "even") {
-      const evenAmount = billAmount / totalParticipants;
-      setParticipants(participants.map(p => ({ ...p, amount: evenAmount })));
+      const each = billAmount / participants.length;
+      setParticipants(participants.map((p) => ({ ...p, amountStr: each.toFixed(2) })));
     }
-  };
+  }
 
-  const handleParticipantAmountChange = (id: string, value: string) => {
-    const newAmount = parseFloat(value) || 0;
-    setParticipants(participants.map(p =>
-      p.id === id ? { ...p, amount: newAmount } : p
-    ));
-  };
+  function updateAmount(index: number, val: string) {
+    setParticipants(participants.map((p, i) => i === index ? { ...p, amountStr: val } : p));
+  }
 
-  const handleStep3Next = () => {
-    const total = participants.reduce((sum, p) => sum + p.amount, 0);
-    const difference = Math.abs(total - billAmount);
+  function updatePlatform(index: number, platform: Platform) {
+    setParticipants(participants.map((p, i) => i === index ? { ...p, platform } : p));
+  }
 
-    if (difference > 0.01) {
+  function handleStep3Next() {
+    const total = participants.reduce((sum, p) => sum + (parseFloat(p.amountStr) || 0), 0);
+    const diff = Math.abs(total - billAmount);
+    if (diff > 0.01) {
       Alert.alert(
-        "Error",
-        `Split amounts ($${total.toFixed(2)}) don't match bill total ($${billAmount.toFixed(2)})`
+        "Mismatch",
+        `Split total ($${total.toFixed(2)}) must equal bill total ($${billAmount.toFixed(2)}).`,
       );
       return;
     }
     setStep(4);
-  };
+  }
 
-  const handleCreateTab = () => {
-    Alert.alert("Success", "Tab created successfully!", [
-      { text: "OK", onPress: onComplete },
-    ]);
-  };
+  async function handleCreateTab() {
+    setSubmitting(true);
+    try {
+      const participantDtos = participants.map((p) => ({
+        userId: p.userId,
+        platform: p.platform,
+        share: Math.round((parseFloat(p.amountStr) || 0) * 100),
+      }));
 
-  const totalSplit = participants.reduce((sum, p) => sum + p.amount, 0);
+      await apiClient.post("/tabs", {
+        name: tabName || "Tab",
+        location: location || undefined,
+        total: Math.round(billAmount * 100),
+        participants: participantDtos,
+      });
+
+      onComplete();
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Failed to create tab.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const totalSplit = participants.reduce((s, p) => s + (parseFloat(p.amountStr) || 0), 0);
   const remaining = billAmount - totalSplit;
 
   return (
@@ -131,140 +172,134 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
         {/* Header */}
         <View style={styles.header}>
           <Pressable onPress={step === 1 ? onBack : () => setStep(step - 1)} style={styles.backButton}>
-            <Text style={styles.backText}>‹ {step === 1 ? "Cancel" : "Back"}</Text>
+            <Text style={styles.backText}>{step === 1 ? "Cancel" : "Back"}</Text>
           </Pressable>
           <Text style={styles.title}>Create New Tab</Text>
           <Text style={styles.stepIndicator}>Step {step} of 4</Text>
         </View>
 
-        {/* Step 1: Enter Bill Details */}
+        {/* Step 1: Bill Details */}
         {step === 1 && (
           <View>
-            <Text style={styles.stepTitle}>Enter Bill Details</Text>
-
+            <Text style={styles.stepTitle}>Bill Details</Text>
             <View style={styles.formGroup}>
               <Text style={styles.label}>Bill Amount *</Text>
               <TextInput
-                style={styles.input}
-                placeholder="0.00"
-                keyboardType="decimal-pad"
-                value={amount}
-                onChangeText={setAmount}
+                style={styles.input} placeholder="0.00" keyboardType="decimal-pad"
+                value={amount} onChangeText={setAmount}
               />
             </View>
-
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Tab Name (Optional)</Text>
+              <Text style={styles.label}>Tab Name (optional)</Text>
               <TextInput
-                style={styles.input}
-                placeholder="e.g., Birthday Dinner"
-                value={tabName}
-                onChangeText={setTabName}
+                style={styles.input} placeholder="e.g. Birthday Dinner"
+                value={tabName} onChangeText={setTabName}
               />
             </View>
-
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Location (Optional)</Text>
+              <Text style={styles.label}>Location (optional)</Text>
               <TextInput
-                style={styles.input}
-                placeholder="e.g., Blue Harbor Restaurant"
-                value={location}
-                onChangeText={setLocation}
+                style={styles.input} placeholder="e.g. Blue Harbor"
+                value={location} onChangeText={setLocation}
               />
             </View>
-
             <Pressable style={styles.primaryButton} onPress={handleStep1Next}>
               <Text style={styles.primaryButtonText}>Next</Text>
             </Pressable>
           </View>
         )}
 
-        {/* Step 2: Select Participants */}
+        {/* Step 2: Select Friends */}
         {step === 2 && (
           <View>
             <Text style={styles.stepTitle}>Select Participants</Text>
-            <Text style={styles.subtitle}>
-              Choose friends to split this tab with ({selectedFriends.length} selected)
-            </Text>
-
-            <Pressable style={styles.selectAllButton} onPress={handleSelectAll}>
-              <Text style={styles.selectAllText}>
-                {friends.every(f => f.selected) ? "Deselect All" : "Select All"}
+            <Text style={styles.subtitle}>{selectedIds.size} selected</Text>
+            {friendsLoading && <ActivityIndicator color={colors.primary} style={styles.spinner} />}
+            {!friendsLoading && friends.length === 0 && (
+              <Text style={styles.emptyText}>
+                No friends yet. Add friends first from the Friends tab.
               </Text>
-            </Pressable>
-
-            {friends.map(friend => (
-              <Pressable
-                key={friend.id}
-                style={[styles.friendItem, friend.selected && styles.friendItemSelected]}
-                onPress={() => handleToggleFriend(friend.id)}
-              >
-                <View style={styles.friendAvatar}>
-                  <Text style={styles.friendAvatarText}>{friend.name.charAt(0)}</Text>
-                </View>
-                <Text style={styles.friendName}>{friend.name}</Text>
-                <View style={[styles.checkbox, friend.selected && styles.checkboxSelected]}>
-                  {friend.selected && <Text style={styles.checkmark}>✓</Text>}
-                </View>
+            )}
+            {friends.map((f) => {
+              const u = otherUser(f, userId!);
+              const selected = selectedIds.has(u.id);
+              return (
+                <Pressable
+                  key={f.id}
+                  style={[styles.friendItem, selected && styles.friendItemSelected]}
+                  onPress={() => toggleFriend(u.id)}
+                >
+                  <View style={styles.friendAvatar}>
+                    <Text style={styles.friendAvatarText}>{u.displayName.charAt(0)}</Text>
+                  </View>
+                  <Text style={styles.friendName}>{u.displayName}</Text>
+                  <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+                    {selected && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                </Pressable>
+              );
+            })}
+            {friends.length > 0 && (
+              <Pressable style={styles.primaryButton} onPress={handleStep2Next}>
+                <Text style={styles.primaryButtonText}>Next</Text>
               </Pressable>
-            ))}
-
-            <Pressable style={styles.primaryButton} onPress={handleStep2Next}>
-              <Text style={styles.primaryButtonText}>Next</Text>
-            </Pressable>
+            )}
           </View>
         )}
 
-        {/* Step 3: Configure Split */}
+        {/* Step 3: Split */}
         {step === 3 && (
           <View>
             <Text style={styles.stepTitle}>Configure Split</Text>
             <Text style={styles.subtitle}>
-              Bill: ${billAmount.toFixed(2)} • {totalParticipants} people
+              ${billAmount.toFixed(2)} among {participants.length} people
             </Text>
 
             <View style={styles.splitTypeToggle}>
-              <Pressable
-                style={[styles.toggleButton, splitType === "even" && styles.toggleButtonActive]}
-                onPress={() => handleSplitTypeChange("even")}
-              >
-                <Text style={[styles.toggleText, splitType === "even" && styles.toggleTextActive]}>
-                  Even Split
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.toggleButton, splitType === "custom" && styles.toggleButtonActive]}
-                onPress={() => handleSplitTypeChange("custom")}
-              >
-                <Text style={[styles.toggleText, splitType === "custom" && styles.toggleTextActive]}>
-                  Custom Split
-                </Text>
-              </Pressable>
+              {(["even", "custom"] as const).map((t) => (
+                <Pressable
+                  key={t}
+                  style={[styles.toggleButton, splitType === t && styles.toggleButtonActive]}
+                  onPress={() => handleSplitTypeChange(t)}
+                >
+                  <Text style={[styles.toggleText, splitType === t && styles.toggleTextActive]}>
+                    {t === "even" ? "Even Split" : "Custom"}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
 
-            {splitType === "even" && (
-              <View style={styles.evenSplitInfo}>
-                <Text style={styles.evenSplitText}>
-                  Each person pays: ${(billAmount / totalParticipants).toFixed(2)}
-                </Text>
-              </View>
-            )}
-
-            {participants.map(participant => (
-              <View key={participant.id} style={styles.participantSplitItem}>
-                <View style={styles.participantSplitInfo}>
+            {participants.map((p, i) => (
+              <View key={p.userId} style={styles.participantSplitItem}>
+                <View style={styles.participantSplitLeft}>
                   <View style={styles.smallAvatar}>
-                    <Text style={styles.smallAvatarText}>{participant.name.charAt(0)}</Text>
+                    <Text style={styles.smallAvatarText}>{p.name.charAt(0)}</Text>
                   </View>
-                  <Text style={styles.participantSplitName}>{participant.name}</Text>
+                  <Text style={styles.participantSplitName}>{p.name}</Text>
                 </View>
-                <TextInput
-                  style={[styles.amountInput, splitType === "even" && styles.amountInputDisabled]}
-                  value={participant.amount.toFixed(2)}
-                  onChangeText={(val) => handleParticipantAmountChange(participant.id, val)}
-                  keyboardType="decimal-pad"
-                  editable={splitType === "custom"}
-                />
+                <View style={styles.participantSplitRight}>
+                  <TextInput
+                    style={[styles.amountInput, splitType === "even" && styles.amountInputDisabled]}
+                    value={p.amountStr}
+                    onChangeText={(v) => updateAmount(i, v)}
+                    keyboardType="decimal-pad"
+                    editable={splitType === "custom"}
+                  />
+                  {/* Platform selector */}
+                  <View style={styles.platformRow}>
+                    {PLATFORMS.map((pl) => (
+                      <Pressable
+                        key={pl.key}
+                        style={[styles.platformChip, p.platform === pl.key && styles.platformChipActive]}
+                        onPress={() => updatePlatform(i, pl.key)}
+                      >
+                        <Text style={[styles.platformChipText, p.platform === pl.key && styles.platformChipTextActive]}>
+                          {pl.label[0]}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
               </View>
             ))}
 
@@ -273,7 +308,7 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
                 <Text style={styles.splitSummaryText}>
                   Total: ${totalSplit.toFixed(2)} / ${billAmount.toFixed(2)}
                 </Text>
-                {remaining !== 0 && (
+                {Math.abs(remaining) > 0.005 && (
                   <Text style={[styles.splitSummaryText, styles.remainingText]}>
                     Remaining: ${remaining.toFixed(2)}
                   </Text>
@@ -287,30 +322,41 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
           </View>
         )}
 
-        {/* Step 4: Review & Confirm */}
+        {/* Step 4: Review */}
         {step === 4 && (
           <View>
             <Text style={styles.stepTitle}>Review & Confirm</Text>
-
             <View style={styles.reviewCard}>
               <Text style={styles.reviewLabel}>Tab Details</Text>
-              {tabName && <Text style={styles.reviewValue}>{tabName}</Text>}
+              <Text style={styles.reviewValue}>{tabName || "Tab"}</Text>
               {location && <Text style={styles.reviewSubvalue}>{location}</Text>}
               <Text style={styles.reviewAmount}>${billAmount.toFixed(2)}</Text>
             </View>
-
             <View style={styles.reviewCard}>
-              <Text style={styles.reviewLabel}>Participants ({totalParticipants})</Text>
-              {participants.map(p => (
-                <View key={p.id} style={styles.reviewParticipant}>
-                  <Text style={styles.reviewParticipantName}>{p.name}</Text>
-                  <Text style={styles.reviewParticipantAmount}>${p.amount.toFixed(2)}</Text>
-                </View>
-              ))}
+              <Text style={styles.reviewLabel}>Participants ({participants.length})</Text>
+              {participants.map((p) => {
+                const platformLabel = PLATFORMS.find((pl) => pl.key === p.platform)?.label ?? p.platform;
+                return (
+                  <View key={p.userId} style={styles.reviewParticipant}>
+                    <View>
+                      <Text style={styles.reviewParticipantName}>{p.name}</Text>
+                      <Text style={styles.reviewParticipantPlatform}>{platformLabel}</Text>
+                    </View>
+                    <Text style={styles.reviewParticipantAmount}>
+                      ${parseFloat(p.amountStr).toFixed(2)}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
-
-            <Pressable style={styles.primaryButton} onPress={handleCreateTab}>
-              <Text style={styles.primaryButtonText}>Create Tab</Text>
+            <Pressable
+              style={[styles.primaryButton, submitting && styles.primaryButtonDisabled]}
+              onPress={handleCreateTab}
+              disabled={submitting}
+            >
+              {submitting
+                ? <ActivityIndicator color="#000" />
+                : <Text style={styles.primaryButtonText}>Create Tab</Text>}
             </Pressable>
           </View>
         )}
@@ -320,280 +366,91 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  backButton: {
-    marginBottom: 12,
-  },
-  backText: {
-    fontSize: 16,
-    color: colors.primary,
-    fontWeight: "600",
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  stepIndicator: {
-    fontSize: 14,
-    color: colors.textMuted,
-    fontWeight: "500",
-  },
-  stepTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: colors.textMuted,
-    marginBottom: 20,
-  },
-  formGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    color: colors.textPrimary,
-  },
-  selectAllButton: {
-    alignSelf: "flex-end",
-    marginBottom: 12,
-  },
-  selectAllText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.primary,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: 16, paddingBottom: 40 },
+  header: { marginBottom: 24 },
+  backButton: { marginBottom: 12 },
+  backText: { fontSize: 16, color: colors.primary, fontWeight: "600" },
+  title: { fontSize: 28, fontWeight: "700", color: colors.textPrimary, marginBottom: 4 },
+  stepIndicator: { fontSize: 14, color: colors.textMuted, fontWeight: "500" },
+  stepTitle: { fontSize: 22, fontWeight: "700", color: colors.textPrimary, marginBottom: 8 },
+  subtitle: { fontSize: 14, color: colors.textMuted, marginBottom: 20 },
+  spinner: { marginTop: 40 },
+  emptyText: { color: colors.textMuted, textAlign: "center", marginTop: 40, lineHeight: 22 },
+  formGroup: { marginBottom: 20 },
+  label: { fontSize: 14, fontWeight: "600", color: colors.textPrimary, marginBottom: 8 },
+  input: { backgroundColor: colors.surface, borderRadius: 12, padding: 14, fontSize: 16, color: colors.textPrimary },
   friendItem: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "transparent",
+    backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginBottom: 10,
+    flexDirection: "row", alignItems: "center", borderWidth: 2, borderColor: "transparent",
   },
-  friendItemSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary + "10",
-  },
+  friendItemSelected: { borderColor: colors.primary, backgroundColor: colors.primary + "10" },
   friendAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary,
+    alignItems: "center", justifyContent: "center", marginRight: 12,
   },
-  friendAvatarText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#000",
-  },
-  friendName: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "500",
-    color: colors.textPrimary,
-  },
+  friendAvatarText: { fontSize: 16, fontWeight: "700", color: "#000" },
+  friendName: { flex: 1, fontSize: 16, fontWeight: "500", color: colors.textPrimary },
   checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: colors.textMuted,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 24, height: 24, borderRadius: 12, borderWidth: 2,
+    borderColor: colors.textMuted, alignItems: "center", justifyContent: "center",
   },
-  checkboxSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  checkmark: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#000",
-  },
+  checkboxSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+  checkmark: { fontSize: 14, fontWeight: "700", color: "#000" },
   splitTypeToggle: {
-    flexDirection: "row",
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 20,
+    flexDirection: "row", backgroundColor: colors.surface,
+    borderRadius: 12, padding: 4, marginBottom: 20,
   },
-  toggleButton: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: "center",
-    borderRadius: 8,
-  },
-  toggleButtonActive: {
-    backgroundColor: colors.primary,
-  },
-  toggleText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.textMuted,
-  },
-  toggleTextActive: {
-    color: "#000",
-  },
-  evenSplitInfo: {
-    backgroundColor: colors.surface,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    alignItems: "center",
-  },
-  evenSplitText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.primary,
-  },
+  toggleButton: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 8 },
+  toggleButtonActive: { backgroundColor: colors.primary },
+  toggleText: { fontSize: 14, fontWeight: "600", color: colors.textMuted },
+  toggleTextActive: { color: "#000" },
   participantSplitItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.surface,
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 10,
+    backgroundColor: colors.surface, borderRadius: 12, padding: 12,
+    marginBottom: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between",
   },
-  participantSplitInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
+  participantSplitLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
+  participantSplitRight: { alignItems: "flex-end", gap: 6 },
   smallAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
+    width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary,
+    alignItems: "center", justifyContent: "center", marginRight: 10,
   },
-  smallAvatarText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#000",
-  },
-  participantSplitName: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: colors.textPrimary,
-  },
+  smallAvatarText: { fontSize: 14, fontWeight: "700", color: "#000" },
+  participantSplitName: { fontSize: 15, fontWeight: "500", color: colors.textPrimary },
   amountInput: {
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    padding: 8,
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.textPrimary,
-    textAlign: "right",
-    minWidth: 80,
+    backgroundColor: "#fff", borderRadius: 8, padding: 8,
+    fontSize: 15, fontWeight: "600", color: colors.textPrimary,
+    textAlign: "right", minWidth: 80,
   },
-  amountInputDisabled: {
-    backgroundColor: "#f0f3f0",
-    color: colors.textMuted,
+  amountInputDisabled: { backgroundColor: "#f0f3f0", color: colors.textMuted },
+  platformRow: { flexDirection: "row", gap: 4 },
+  platformChip: {
+    width: 28, height: 28, borderRadius: 14, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.textMuted,
+    alignItems: "center", justifyContent: "center",
   },
-  splitSummary: {
-    backgroundColor: colors.surface,
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  splitSummaryText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.textPrimary,
-    textAlign: "center",
-  },
-  remainingText: {
-    color: colors.error,
-    marginTop: 4,
-  },
-  reviewCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 16,
-  },
-  reviewLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.textMuted,
-    textTransform: "uppercase",
-    marginBottom: 8,
-  },
-  reviewValue: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  reviewSubvalue: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: colors.textSecondary,
-    marginBottom: 8,
-  },
-  reviewAmount: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: colors.primary,
-  },
-  reviewParticipant: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#e5e9e6",
-  },
-  reviewParticipantName: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: colors.textPrimary,
-  },
-  reviewParticipantAmount: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.primary,
-  },
+  platformChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  platformChipText: { fontSize: 12, fontWeight: "700", color: colors.textMuted },
+  platformChipTextActive: { color: "#000" },
+  splitSummary: { backgroundColor: colors.surface, padding: 14, borderRadius: 12, marginBottom: 20 },
+  splitSummaryText: { fontSize: 15, fontWeight: "600", color: colors.textPrimary, textAlign: "center" },
+  remainingText: { color: colors.error, marginTop: 4 },
   primaryButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: "center",
-    marginTop: 20,
+    backgroundColor: colors.primary, paddingVertical: 14,
+    borderRadius: 14, alignItems: "center", marginTop: 20,
   },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#000",
+  primaryButtonDisabled: { opacity: 0.6 },
+  primaryButtonText: { fontSize: 16, fontWeight: "600", color: "#000" },
+  reviewCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 16, marginBottom: 16 },
+  reviewLabel: { fontSize: 12, fontWeight: "600", color: colors.textMuted, textTransform: "uppercase", marginBottom: 8 },
+  reviewValue: { fontSize: 18, fontWeight: "700", color: colors.textPrimary, marginBottom: 4 },
+  reviewSubvalue: { fontSize: 14, fontWeight: "500", color: colors.textSecondary, marginBottom: 8 },
+  reviewAmount: { fontSize: 24, fontWeight: "700", color: colors.primary },
+  reviewParticipant: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingVertical: 8, borderTopWidth: 1, borderTopColor: "#e5e9e6",
   },
+  reviewParticipantName: { fontSize: 15, fontWeight: "500", color: colors.textPrimary },
+  reviewParticipantPlatform: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  reviewParticipantAmount: { fontSize: 15, fontWeight: "600", color: colors.primary },
 });

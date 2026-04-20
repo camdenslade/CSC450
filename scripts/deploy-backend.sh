@@ -29,9 +29,7 @@ if [[ ! -f "$SSH_KEY" ]]; then
   exit 1
 fi
 
-# ---------------------------------------------------------
 # 1. Sync source to EC2 via tar over SSH (no rsync needed locally)
-# ---------------------------------------------------------
 echo "Syncing source to ${REMOTE_HOST}:${REMOTE_DIR} ..."
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" \
   "mkdir -p ${REMOTE_DIR}"
@@ -46,9 +44,7 @@ tar -C "$ROOT_DIR" \
   | ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" \
       "tar -xzf - -C ${REMOTE_DIR}"
 
-# ---------------------------------------------------------
 # 2. Build image on EC2 and (re)start container
-# ---------------------------------------------------------
 echo "Building and deploying on ${REMOTE_HOST}..."
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" bash -s \
   "$REMOTE_DIR" "$REMOTE_SERVICE" "$AWS_REGION" "$RUN_MIGRATIONS" <<'ENDSSH'
