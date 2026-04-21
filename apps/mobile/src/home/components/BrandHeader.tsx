@@ -1,5 +1,5 @@
 // apps/mobile/src/home/components/BrandHeader.tsx
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, Image, StyleSheet } from "react-native";
 import { colors } from "../../theme/colors";
 
 type BrandHeaderProps = {
@@ -13,7 +13,7 @@ export function BrandHeader({ title, subtitle, badgeText }: BrandHeaderProps) {
   return (
     <View style={styles.brandRow}>
       <View style={styles.brandBadge}>
-        <Text style={styles.brandBadgeText}>{badgeText}</Text>
+        <Image source={require("../../../assets/logo.png")} style={styles.brandBadgeImage} resizeMode="contain" />
       </View>
       <View style={styles.brandCopy}>
         <Text style={styles.title}>{title}</Text>
@@ -38,11 +38,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.textMuted,
   },
-  brandBadgeText: {
-    color: colors.textPrimary,
-    fontWeight: "700",
-    letterSpacing: 1,
-    fontSize: 12,
+  brandBadgeImage: {
+    width: 30,
+    height: 30,
   },
   brandCopy: {
     marginLeft: 12,

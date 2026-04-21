@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   View,
   Text,
+  Image,
   TextInput,
   Pressable,
   StyleSheet,
@@ -61,7 +62,7 @@ export function LoginScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.card}>
-        <Text style={styles.logo}>TabUp</Text>
+        <Image source={require("../../assets/logo.png")} style={styles.logo} resizeMode="contain" />
         <Text style={styles.tagline}>Split restaurant and bar tabs.</Text>
 
         <View style={styles.modeToggle}>
@@ -145,10 +146,8 @@ const styles = StyleSheet.create({
     maxWidth: 400,
   },
   logo: {
-    fontSize: 40,
-    fontWeight: "800",
-    color: colors.primary,
-    textAlign: "center",
+    width: "100%",
+    height: 80,
     marginBottom: 6,
   },
   tagline: {
