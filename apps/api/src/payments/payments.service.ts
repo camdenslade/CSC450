@@ -97,6 +97,14 @@ export class PaymentsService {
         return this.buildLink(platform, handle.handle, amountStr, safeMemo);
     }
 
+    // Public so BillsService can call it after pre-fetching handles, avoiding per-participant DB queries.
+    buildLinkFromHandle(handle: string, platform: Platform, amountCents: number, note?: string): GeneratedLink {
+        this.validateHandle(platform, handle);
+        const amountStr = this.centsToDecimalString(amountCents);
+        const safeMemo  = this.sanitizeMemo(note ?? 'TabUp');
+        return this.buildLink(platform, handle, amountStr, safeMemo);
+    }
+
     private buildLink(platform: Platform, handle: string, amount: string, memo: string): GeneratedLink {
         switch (platform) {
             case Platform.PAYPAL: {

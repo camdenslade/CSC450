@@ -1,18 +1,17 @@
-// apps/mobile/src/home/components/MetricsRow.tsx
 import { View, Text, StyleSheet } from "react-native";
-import { colors } from "../../theme/colors";
+import { useColors } from "../../theme/colors";
 
 export type Metric = { label: string; value: string; hint: string };
 
-// Horizontal trio of key stats
 export function MetricsRow({ metrics }: { metrics: Metric[] }) {
+  const c = useColors();
   return (
-    <View style={styles.metricsRow}>
-      {metrics.map((metric) => (
-        <View key={metric.label} style={styles.metricCard}>
-          <Text style={styles.metricLabel}>{metric.label}</Text>
-          <Text style={styles.metricValue}>{metric.value}</Text>
-          <Text style={styles.metricHint}>{metric.hint}</Text>
+    <View style={styles.row}>
+      {metrics.map((m) => (
+        <View key={m.label} style={[styles.pill, { backgroundColor: c.surface, borderColor: c.border }]}>
+          <Text style={[styles.value, { color: c.textPrimary }]}>{m.value}</Text>
+          <Text style={[styles.label, { color: c.textSecondary }]}>{m.label}</Text>
+          <Text style={[styles.hint, { color: c.textMuted }]}>{m.hint}</Text>
         </View>
       ))}
     </View>
@@ -20,32 +19,13 @@ export function MetricsRow({ metrics }: { metrics: Metric[] }) {
 }
 
 const styles = StyleSheet.create({
-  metricsRow: {
-    marginTop: 20,
-    flexDirection: "row",
-    gap: 12,
-  },
-  metricCard: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
+  row: { flexDirection: "row", gap: 10, marginTop: 16 },
+  pill: {
+    flex: 1, borderRadius: 16, padding: 14,
     borderWidth: 1,
-    borderColor: colors.textMuted,
+    shadowColor: "#000", shadowOpacity: 0.03, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 1,
   },
-  metricLabel: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  metricValue: {
-    marginTop: 6,
-    color: colors.textPrimary,
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  metricHint: {
-    marginTop: 4,
-    color: colors.textMuted,
-    fontSize: 12,
-  },
+  value: { fontSize: 22, fontWeight: "800", letterSpacing: -0.5 },
+  label: { fontSize: 11, fontWeight: "600", marginTop: 4 },
+  hint: { fontSize: 11, marginTop: 2 },
 });

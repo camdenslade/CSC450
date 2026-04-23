@@ -3,6 +3,7 @@
 import {
     Body,
     Controller,
+    Delete,
     Get,
     HttpCode,
     HttpStatus,
@@ -28,14 +29,14 @@ export class UsersController {
         return this.usersService.getProfile(caller.uid);
     }
 
-    /** GET /v1/users/search?q=name - partial display-name search, excludes caller. */
+    /** GET /v1/users/search?q=term - fuzzy search across display name and payment handles */
     @Get('search')
     searchUsers(
         @CurrentUser() caller: AuthenticatedUser,
         @Query('q') q: string,
     ) {
         if (!q || q.trim().length < 2) return [];
-        return this.usersService.searchByName(caller.uid, q.trim());
+        return this.usersService.search(caller.uid, q.trim());
     }
 
     @Patch('me')
@@ -44,6 +45,12 @@ export class UsersController {
         @Body() dto: UpdateUserDto,
     ) {
         return this.usersService.updateProfile(caller.uid, dto);
+    }
+
+    @Delete('me')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    deleteAccount(@CurrentUser() caller: AuthenticatedUser) {
+        return this.usersService.deleteAccount(caller.uid);
     }
 
     @Post('device')

@@ -16,7 +16,7 @@ export class AuthController {
     @HttpCode(HttpStatus.OK)
     @Throttle({ default: { limit: 10, ttl: 60_000 } })
     async exchange(@Body() dto: ExchangeTokenDto) {
-        const user = await this.authService.exchangeToken(dto.idToken);
-        return { userId: user.id, displayName: user.displayName };
+        const { user, isNew } = await this.authService.exchangeToken(dto.idToken);
+        return { userId: user.id, displayName: user.displayName, isNew };
     }
 }

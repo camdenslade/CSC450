@@ -1,108 +1,130 @@
-// apps/mobile/src/screens/tabs/TabsListScreen.tsx
-import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, SectionList, Pressable, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, SectionList, Pressable, RefreshControl } from "react-native";
+import { AnimatedPressable } from "../../shared/AnimatedPressable";
+import { useState, useCallback } from "react";
+import { useColors } from "../../theme/colors";
+import { Ionicons } from "@expo/vector-icons";
 import { Layout } from "../../shared/Layout";
 import { colors } from "../../theme/colors";
 import { TabKey } from "../../shared/NavBar";
 import { useAuth } from "../../auth/AuthContext";
+import { useData } from "../../store/DataContext";
 import { ApiBill } from "../../api/client";
 
 type TabsListScreenProps = {
   onTabPress?: (tab: TabKey) => void;
   onViewTabDetail?: (tabId: string) => void;
+  onCreateTab?: () => void;
 };
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
-  const now = new Date();
-  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
+  const diffDays = Math.floor((Date.now() - d.getTime()) / 86_400_000);
   if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export function TabsListScreen({ onTabPress, onViewTabDetail }: TabsListScreenProps) {
-  const { apiClient, userId } = useAuth();
-  const [bills, setBills] = useState<ApiBill[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    apiClient
-      .get<ApiBill[]>("/tabs")
-      .then(setBills)
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
+export function TabsListScreen({ onTabPress, onViewTabDetail, onCreateTab }: TabsListScreenProps) {
+  const { userId } = useAuth();
+  const { bills, refreshBills } = useData();
+  const c = useColors();
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshBills().catch(() => {});
+    setRefreshing(false);
+  }, [refreshBills]);
 
   const openBills = bills.filter((b) => b.status === "open");
   const settledBills = bills.filter((b) => b.status !== "open");
   const sections = [
-    { title: "Open Tabs", data: openBills },
+    { title: "Open", data: openBills },
     { title: "Settled", data: settledBills },
   ].filter((s) => s.data.length > 0);
 
   function myShare(bill: ApiBill): number {
-    const p = bill.participants.find((x) => x.userId === userId);
-    return p ? p.shareCents : 0;
+    return bill.participants.find((x) => x.userId === userId)?.shareCents ?? 0;
   }
 
   const renderTab = ({ item }: { item: ApiBill }) => {
     const isOpen = item.status === "open";
     const share = myShare(item);
+    const pendingCount = item.participants.filter((p) => p.state === "pending").length;
+
     return (
-      <Pressable style={styles.tabCard} onPress={() => onViewTabDetail?.(item.id)}>
-        <View style={styles.tabHeader}>
-          <Text style={styles.tabName}>{item.name}</Text>
-          {isOpen && (
-            <View style={styles.openBadge}>
-              <Text style={styles.openBadgeText}>Open</Text>
-            </View>
-          )}
-        </View>
-        {item.location && <Text style={styles.location}>{item.location}</Text>}
-        <Text style={styles.date}>{formatDate(item.createdAt)}</Text>
-        <View style={styles.divider} />
-        <View style={styles.tabFooter}>
-          <View style={styles.footerItem}>
-            <Text style={styles.footerLabel}>Total</Text>
-            <Text style={styles.footerValue}>${(item.totalCents / 100).toFixed(2)}</Text>
+      <AnimatedPressable
+        style={styles.card}
+        onPress={() => onViewTabDetail?.(item.id)}
+      >
+        <View style={styles.cardTop}>
+          <View style={styles.cardInfo}>
+            <Text style={styles.cardName}>{item.name}</Text>
+            {item.location ? <Text style={styles.cardSub}>{item.location}</Text> : null}
+            <Text style={styles.cardDate}>{formatDate(item.createdAt)}</Text>
           </View>
-          {share > 0 && (
-            <View style={styles.footerItem}>
-              <Text style={styles.footerLabel}>Your share</Text>
-              <Text style={[styles.footerValue, styles.yourShare]}>
-                ${(share / 100).toFixed(2)}
+          <View style={styles.cardRight}>
+            <Text style={styles.cardTotal}>${(item.totalCents / 100).toFixed(2)}</Text>
+            <View style={[styles.badge, isOpen ? styles.badgeOpen : styles.badgeSettled]}>
+              <Text style={[styles.badgeText, isOpen ? styles.badgeTextOpen : styles.badgeTextSettled]}>
+                {isOpen ? "Open" : "Settled"}
               </Text>
             </View>
-          )}
-          <View style={styles.footerItem}>
-            <Text style={styles.footerLabel}>People</Text>
-            <Text style={styles.footerValue}>{item.participants.length}</Text>
           </View>
         </View>
-      </Pressable>
+
+        <View style={styles.cardFooter}>
+          {share > 0 && (
+            <View style={styles.footerChip}>
+              <Text style={styles.footerChipLabel}>Your share</Text>
+              <Text style={styles.footerChipValue}>${(share / 100).toFixed(2)}</Text>
+            </View>
+          )}
+          <View style={styles.footerChip}>
+            <Text style={styles.footerChipLabel}>People</Text>
+            <Text style={styles.footerChipValue}>{item.participants.length}</Text>
+          </View>
+          {isOpen && pendingCount > 0 && (
+            <View style={[styles.footerChip, styles.footerChipWarning]}>
+              <Text style={styles.footerChipWarningText}>{pendingCount} awaiting</Text>
+            </View>
+          )}
+        </View>
+      </AnimatedPressable>
     );
   };
 
   const renderSectionHeader = ({ section }: { section: { title: string; data: ApiBill[] } }) => (
     <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{section.title}</Text>
-      <Text style={styles.sectionCount}>{section.data.length}</Text>
+      <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>{section.title}</Text>
+      <View style={styles.sectionCount}>
+        <Text style={styles.sectionCountText}>{section.data.length}</Text>
+      </View>
     </View>
   );
 
   return (
-    <Layout activeTab="Tabs" onTabPress={onTabPress}>
+    <Layout activeTab="Tabs" onTabPress={onTabPress} onCreateTab={onCreateTab}>
       <View style={styles.container}>
-        <Text style={styles.title}>Tabs</Text>
-        {loading && <ActivityIndicator color={colors.primary} style={styles.spinner} />}
-        {!!error && <Text style={styles.errorText}>{error}</Text>}
-        {!loading && !error && bills.length === 0 && (
-          <Text style={styles.emptyText}>No tabs yet. Create one to get started.</Text>
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: c.textPrimary }]}>Tabs</Text>
+          <AnimatedPressable style={styles.newBtn} onPress={onCreateTab} scaleTo={0.94}>
+            <Text style={styles.newBtnText}>+ New</Text>
+          </AnimatedPressable>
+        </View>
+
+        {bills.length === 0 && (
+          <View style={styles.emptyState}>
+            <Ionicons name="receipt-outline" size={48} color={c.textMuted} style={styles.emptyIcon} />
+            <Text style={[styles.emptyTitle, { color: c.textPrimary }]}>No tabs yet</Text>
+            <Text style={[styles.emptySub, { color: c.textMuted }]}>Create one to start splitting with friends.</Text>
+            <AnimatedPressable style={styles.emptyBtn} onPress={onCreateTab}>
+              <Text style={styles.emptyBtnText}>Create tab</Text>
+            </AnimatedPressable>
+          </View>
         )}
-        {!loading && sections.length > 0 && (
+
+        {sections.length > 0 && (
           <SectionList
             sections={sections}
             renderItem={renderTab}
@@ -111,6 +133,7 @@ export function TabsListScreen({ onTabPress, onViewTabDetail }: TabsListScreenPr
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             stickySectionHeadersEnabled={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           />
         )}
       </View>
@@ -120,49 +143,51 @@ export function TabsListScreen({ onTabPress, onViewTabDetail }: TabsListScreenPr
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  title: { fontSize: 28, fontWeight: "700", color: colors.textPrimary, marginBottom: 8 },
-  spinner: { marginTop: 40 },
-  emptyText: { color: colors.textMuted, textAlign: "center", marginTop: 60 },
-  errorText: { color: colors.error, textAlign: "center", marginTop: 40 },
-  listContent: { paddingTop: 12, paddingBottom: 120 },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 16,
-    marginBottom: 10,
+  header: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingBottom: 8,
   },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },
-  sectionCount: { fontSize: 14, fontWeight: "600", color: colors.textMuted },
-  tabCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 8,
-    elevation: 2,
+  title: { fontSize: 28, fontWeight: "800", color: colors.textPrimary, letterSpacing: -0.5 },
+  newBtn: { backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  newBtnPressed: { backgroundColor: colors.primaryDark },
+  newBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  emptyState: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
+  emptyIcon: { marginBottom: 16 },
+  emptyTitle: { fontSize: 20, fontWeight: "700", color: colors.textPrimary, marginBottom: 8 },
+  emptySub: { fontSize: 14, color: colors.textMuted, textAlign: "center", lineHeight: 20, marginBottom: 24 },
+  emptyBtn: { backgroundColor: colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14 },
+  emptyBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+  listContent: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 100 },
+  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 20, marginBottom: 10 },
+  sectionTitle: { fontSize: 16, fontWeight: "700", color: colors.textSecondary },
+  sectionCount: { backgroundColor: colors.surfaceSecondary, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  sectionCountText: { fontSize: 12, fontWeight: "700", color: colors.textMuted },
+  card: {
+    backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 10,
+    borderWidth: 1, borderColor: colors.border,
+    shadowColor: "#000", shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 2,
   },
-  tabHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 6,
+  cardPressed: { backgroundColor: colors.surfaceSecondary },
+  cardTop: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
+  cardInfo: { flex: 1, marginRight: 12 },
+  cardName: { fontSize: 16, fontWeight: "700", color: colors.textPrimary },
+  cardSub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  cardDate: { fontSize: 12, color: colors.textMuted, marginTop: 4 },
+  cardRight: { alignItems: "flex-end", gap: 6 },
+  cardTotal: { fontSize: 18, fontWeight: "800", color: colors.textPrimary },
+  badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
+  badgeOpen: { backgroundColor: colors.warning + "20" },
+  badgeSettled: { backgroundColor: colors.primaryLight },
+  badgeText: { fontSize: 11, fontWeight: "700" },
+  badgeTextOpen: { color: colors.warning },
+  badgeTextSettled: { color: colors.primaryDark },
+  cardFooter: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  footerChip: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: colors.surfaceSecondary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
   },
-  tabName: { fontSize: 17, fontWeight: "700", color: colors.textPrimary },
-  openBadge: { backgroundColor: colors.primary, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  openBadgeText: { fontSize: 11, fontWeight: "700", color: "#000" },
-  location: { fontSize: 14, fontWeight: "500", color: colors.textSecondary, marginBottom: 2 },
-  date: { fontSize: 13, fontWeight: "500", color: colors.textMuted },
-  divider: { height: 1, backgroundColor: "#e5e9e6", marginVertical: 12 },
-  tabFooter: { flexDirection: "row", justifyContent: "space-between" },
-  footerItem: { flex: 1 },
-  footerLabel: {
-    fontSize: 11, fontWeight: "600", color: colors.textMuted,
-    marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5,
-  },
-  footerValue: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
-  yourShare: { color: colors.primary },
+  footerChipWarning: { backgroundColor: colors.warning + "15" },
+  footerChipLabel: { fontSize: 12, color: colors.textMuted },
+  footerChipValue: { fontSize: 12, fontWeight: "700", color: colors.textSecondary },
+  footerChipWarningText: { fontSize: 12, fontWeight: "600", color: colors.warning },
 });

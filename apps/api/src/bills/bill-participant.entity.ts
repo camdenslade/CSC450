@@ -56,6 +56,9 @@ export class BillParticipant extends BaseEntity {
     @Column({ name: 'reminders_sent', type: 'int', default: 0 })
     remindersSent: number;
 
+    @Column({ name: 'remind_at', type: 'timestamptz', nullable: true })
+    remindAt: Date | null;
+
     @Column({ name: 'settled_at', type: 'timestamptz', nullable: true })
     settledAt: Date | null;
 }

@@ -1,52 +1,56 @@
 // apps/mobile/src/auth/LoginScreen.tsx
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  Pressable,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  Alert,
+  View, Text, TextInput, Pressable,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView,
 } from "react-native";
-import auth from "@react-native-firebase/auth";
-import { colors } from "../theme/colors";
-import { API_BASE } from "../api/config";
-
-async function exchangeToken(idToken: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/auth/exchange`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idToken }),
-  });
-  if (!res.ok) throw new Error("Account setup failed - please try again.");
-}
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+} from "@react-native-firebase/auth";
+import { useColors } from "../theme/colors";
+import { AppIcon } from "../shared/AppIcon";
+import { ForgotPasswordScreen } from "./ForgotPasswordScreen";
 
 export function LoginScreen() {
+  const c = useColors();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [forgotPassword, setForgotPassword] = useState(false);
+
+  if (forgotPassword) {
+    return <ForgotPasswordScreen onBack={() => setForgotPassword(false)} />;
+  }
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const passwordRef = useRef<TextInput>(null);
+  const confirmRef = useRef<TextInput>(null);
 
   async function handleSubmit() {
     if (!email.trim() || !password.trim()) {
       Alert.alert("Missing fields", "Please enter your email and password.");
       return;
     }
-
+    if (mode === "signup" && password !== confirmPassword) {
+      Alert.alert("Passwords don't match", "Please make sure both passwords are the same.");
+      return;
+    }
+    if (mode === "signup" && password.length < 6) {
+      Alert.alert("Weak password", "Password must be at least 6 characters.");
+      return;
+    }
     setLoading(true);
     try {
-      let cred;
+      const auth = getAuth();
       if (mode === "signup") {
-        cred = await auth().createUserWithEmailAndPassword(email.trim(), password);
+        await createUserWithEmailAndPassword(auth, email.trim(), password);
       } else {
-        cred = await auth().signInWithEmailAndPassword(email.trim(), password);
+        await signInWithEmailAndPassword(auth, email.trim(), password);
       }
-
-      const idToken = await cred.user.getIdToken();
-      await exchangeToken(idToken);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Something went wrong.";
       Alert.alert("Error", friendlyFirebaseError(msg));
@@ -55,74 +59,138 @@ export function LoginScreen() {
     }
   }
 
+  function switchMode(next: "signin" | "signup") {
+    setMode(next);
+    setPassword("");
+    setConfirmPassword("");
+  }
+
+  const inputStyle = {
+    backgroundColor: c.surfaceSecondary, borderRadius: 14,
+    paddingHorizontal: 16, paddingVertical: 14,
+    fontSize: 16, color: c.textPrimary,
+    marginBottom: 12, borderWidth: 1, borderColor: c.border,
+  };
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <View style={styles.card}>
-        <Text style={styles.logo}>TabUp</Text>
-        <Text style={styles.tagline}>Split restaurant and bar tabs.</Text>
-
-        <View style={styles.modeToggle}>
-          <Pressable
-            style={[styles.modeButton, mode === "signin" && styles.modeButtonActive]}
-            onPress={() => setMode("signin")}
-          >
-            <Text style={[styles.modeText, mode === "signin" && styles.modeTextActive]}>
-              Sign In
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.modeButton, mode === "signup" && styles.modeButtonActive]}
-            onPress={() => setMode("signup")}
-          >
-            <Text style={[styles.modeText, mode === "signup" && styles.modeTextActive]}>
-              Create Account
-            </Text>
-          </Pressable>
-        </View>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          placeholderTextColor={colors.textMuted}
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-          editable={!loading}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor={colors.textMuted}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          editable={!loading}
-        />
-
-        <Pressable
-          style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={loading}
+    <SafeAreaView style={{ flex: 1, backgroundColor: c.background }}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingHorizontal: 24, paddingVertical: 40 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          {loading ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text style={styles.submitText}>
-              {mode === "signin" ? "Sign In" : "Create Account"}
-            </Text>
-          )}
-        </Pressable>
-      </View>
-    </KeyboardAvoidingView>
+          {/* Logo */}
+          <View style={{ alignItems: "center", marginBottom: 40, gap: 8 }}>
+            <AppIcon size={100} />
+            <Text style={{ fontSize: 28, fontWeight: "800", color: c.textPrimary, letterSpacing: -0.5 }}>TabUp</Text>
+            <Text style={{ fontSize: 15, color: c.textMuted, fontWeight: "500" }}>Split restaurant and bar tabs.</Text>
+          </View>
+
+          {/* Card */}
+          <View style={{
+            backgroundColor: c.surface, borderRadius: 24, padding: 24,
+            shadowColor: "#000", shadowOpacity: 0.06, shadowOffset: { width: 0, height: 4 },
+            shadowRadius: 16, elevation: 4, borderWidth: 1, borderColor: c.border,
+          }}>
+            {/* Mode toggle */}
+            <View style={{
+              flexDirection: "row", backgroundColor: c.surfaceSecondary,
+              borderRadius: 14, padding: 4, marginBottom: 24,
+            }}>
+              {(["signin", "signup"] as const).map((m) => (
+                <Pressable
+                  key={m}
+                  style={{
+                    flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 10,
+                    ...(mode === m ? {
+                      backgroundColor: c.surface,
+                      shadowColor: "#000", shadowOpacity: 0.06,
+                      shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 2,
+                    } : {}),
+                  }}
+                  onPress={() => switchMode(m)}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: mode === m ? c.textPrimary : c.textMuted }}>
+                    {m === "signin" ? "Sign In" : "Create Account"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <TextInput
+              style={inputStyle}
+              placeholder="Email"
+              placeholderTextColor={c.textMuted}
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              editable={!loading}
+              returnKeyType="next"
+              onSubmitEditing={() => passwordRef.current?.focus()}
+            />
+            <TextInput
+              ref={passwordRef}
+              style={inputStyle}
+              placeholder="Password"
+              placeholderTextColor={c.textMuted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              editable={!loading}
+              returnKeyType={mode === "signup" ? "next" : "done"}
+              onSubmitEditing={() => mode === "signup" ? confirmRef.current?.focus() : handleSubmit()}
+            />
+
+            {mode === "signin" && (
+              <Pressable
+                style={{ alignSelf: "flex-end", marginBottom: 8, marginTop: -4 }}
+                onPress={() => setForgotPassword(true)}
+              >
+                <Text style={{ fontSize: 13, color: c.primary, fontWeight: "600" }}>Forgot password?</Text>
+              </Pressable>
+            )}
+
+            {mode === "signup" && (
+              <TextInput
+                ref={confirmRef}
+                style={inputStyle}
+                placeholder="Confirm password"
+                placeholderTextColor={c.textMuted}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry
+                editable={!loading}
+                returnKeyType="done"
+                onSubmitEditing={handleSubmit}
+              />
+            )}
+
+            <Pressable
+              style={({ pressed }) => ({
+                backgroundColor: pressed ? c.primaryDark : c.primary,
+                paddingVertical: 15, borderRadius: 14, alignItems: "center", marginTop: 8,
+                shadowColor: c.primary, shadowOpacity: pressed ? 0 : 0.3,
+                shadowOffset: { width: 0, height: 4 }, shadowRadius: 10,
+              })}
+              onPress={handleSubmit}
+              disabled={loading}
+            >
+              {loading
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={{ fontSize: 16, fontWeight: "700", color: "#fff" }}>
+                    {mode === "signin" ? "Sign In" : "Create Account"}
+                  </Text>}
+            </Pressable>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
-/** Map Firebase error codes to friendlier messages. */
 function friendlyFirebaseError(msg: string): string {
   if (msg.includes("email-already-in-use")) return "An account with that email already exists.";
   if (msg.includes("wrong-password") || msg.includes("invalid-credential")) return "Incorrect email or password.";
@@ -131,77 +199,3 @@ function friendlyFirebaseError(msg: string): string {
   if (msg.includes("invalid-email")) return "Please enter a valid email address.";
   return msg;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-  },
-  card: {
-    width: "100%",
-    maxWidth: 400,
-  },
-  logo: {
-    fontSize: 40,
-    fontWeight: "800",
-    color: colors.primary,
-    textAlign: "center",
-    marginBottom: 6,
-  },
-  tagline: {
-    fontSize: 15,
-    color: colors.textMuted,
-    textAlign: "center",
-    marginBottom: 36,
-  },
-  modeToggle: {
-    flexDirection: "row",
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 20,
-  },
-  modeButton: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: "center",
-    borderRadius: 8,
-  },
-  modeButtonActive: {
-    backgroundColor: colors.primary,
-  },
-  modeText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.textMuted,
-  },
-  modeTextActive: {
-    color: "#000",
-  },
-  input: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    color: colors.textPrimary,
-    marginBottom: 14,
-  },
-  submitButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: "center",
-    marginTop: 6,
-  },
-  submitButtonDisabled: {
-    opacity: 0.6,
-  },
-  submitText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#000",
-  },
-});

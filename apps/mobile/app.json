@@ -5,16 +5,21 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#ffffff",
+      "dark": {
+        "image": "./assets/dark-mode/TabUp-Light-Trans.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#0a1918"
+      }
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.camdenslade.TabUp",
+      "bundleIdentifier": "app.tabup.us",
       "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {

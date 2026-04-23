@@ -1,17 +1,14 @@
 // apps/mobile/src/screens/groups/GroupsListScreen.tsx
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
+  ActivityIndicator, Alert, FlatList,
+  Pressable, RefreshControl, StyleSheet, Text, View,
 } from "react-native";
+import { AnimatedPressable } from "../../shared/AnimatedPressable";
+import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Background } from "../../shared/Background";
-import { colors } from "../../theme/colors";
+import { colors, useColors } from "../../theme/colors";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiGroup } from "../../api/client";
 
@@ -21,27 +18,44 @@ type Props = {
   onCreateGroup: () => void;
 };
 
+function initials(name: string) {
+  return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+}
+
 export function GroupsListScreen({ onBack, onViewGroup, onCreateGroup }: Props) {
   const { apiClient } = useAuth();
+  const c = useColors();
   const [groups, setGroups] = useState<ApiGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchGroups = useCallback(async () => {
+    try {
+      const data = await apiClient.get<ApiGroup[]>("/groups");
+      setGroups(data);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Failed to load groups.");
+    }
+  }, [apiClient]);
 
   useEffect(() => {
-    apiClient
-      .get<ApiGroup[]>("/groups")
-      .then(setGroups)
-      .catch((e: Error) => Alert.alert("Error", e.message))
-      .finally(() => setLoading(false));
+    fetchGroups().finally(() => setLoading(false));
   }, []);
 
-  function renderGroup({ item }: { item: ApiGroup }) {
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchGroups();
+    setRefreshing(false);
+  }, [fetchGroups]);
+
+  function renderGroup({ item, index }: { item: ApiGroup; index: number }) {
     return (
-      <Pressable
-        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+      <AnimatedPressable
+        style={[styles.card, index > 0 && styles.cardBorder]}
         onPress={() => onViewGroup(item.id)}
       >
         <View style={styles.cardAvatar}>
-          <Text style={styles.cardAvatarText}>{item.name.charAt(0).toUpperCase()}</Text>
+          <Text style={styles.cardAvatarText}>{initials(item.name)}</Text>
         </View>
         <View style={styles.cardBody}>
           <Text style={styles.cardName}>{item.name}</Text>
@@ -50,7 +64,7 @@ export function GroupsListScreen({ onBack, onViewGroup, onCreateGroup }: Props) 
           </Text>
         </View>
         <Text style={styles.chevron}>›</Text>
-      </Pressable>
+      </AnimatedPressable>
     );
   }
 
@@ -60,11 +74,11 @@ export function GroupsListScreen({ onBack, onViewGroup, onCreateGroup }: Props) 
         <SafeAreaView style={styles.container} edges={["top", "left", "right", "bottom"]}>
           <View style={styles.header}>
             <Pressable onPress={onBack} hitSlop={12}>
-              <Text style={styles.back}>Back</Text>
+              <Text style={styles.back}>‹ Back</Text>
             </Pressable>
             <Text style={styles.title}>Groups</Text>
-            <Pressable style={styles.createButton} onPress={onCreateGroup}>
-              <Text style={styles.createButtonText}>+ New</Text>
+            <Pressable style={styles.newBtn} onPress={onCreateGroup}>
+              <Text style={styles.newBtnText}>+ New</Text>
             </Pressable>
           </View>
 
@@ -72,8 +86,9 @@ export function GroupsListScreen({ onBack, onViewGroup, onCreateGroup }: Props) 
             <ActivityIndicator color={colors.primary} style={styles.spinner} />
           ) : groups.length === 0 ? (
             <View style={styles.empty}>
-              <Text style={styles.emptyText}>No groups yet.</Text>
-              <Text style={styles.emptySubtext}>Create one to split tabs with recurring crews.</Text>
+              <Ionicons name="people-outline" size={48} color={c.textMuted} style={styles.emptyIcon} />
+              <Text style={[styles.emptyTitle, { color: c.textPrimary }]}>No groups yet</Text>
+              <Text style={[styles.emptySubtext, { color: c.textMuted }]}>Create one to split tabs with your usual crew.</Text>
               <Pressable style={styles.emptyButton} onPress={onCreateGroup}>
                 <Text style={styles.emptyButtonText}>Create a group</Text>
               </Pressable>
@@ -84,6 +99,9 @@ export function GroupsListScreen({ onBack, onViewGroup, onCreateGroup }: Props) 
               keyExtractor={(g) => g.id}
               renderItem={renderGroup}
               contentContainerStyle={styles.list}
+              ListHeaderComponent={<View style={styles.listCard} />}
+              ListFooterComponent={<View style={styles.listCardFooter} />}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
             />
           )}
         </SafeAreaView>
@@ -93,61 +111,47 @@ export function GroupsListScreen({ onBack, onViewGroup, onCreateGroup }: Props) 
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingTop: 16,
-    paddingHorizontal: 16,
-    paddingBottom: 0,
-  },
+  container: { flex: 1, paddingTop: 8, paddingHorizontal: 16 },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 20,
-    gap: 8,
+    flexDirection: "row", alignItems: "center", marginBottom: 24,
   },
-  back: { fontSize: 15, fontWeight: "600", color: colors.primary, minWidth: 48 },
-  title: { flex: 1, fontSize: 20, fontWeight: "700", color: colors.textPrimary, textAlign: "center" },
-  createButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  createButtonText: { fontSize: 14, fontWeight: "700", color: "#000" },
+  back: { fontSize: 15, fontWeight: "600", color: colors.primary, minWidth: 64 },
+  title: { flex: 1, fontSize: 22, fontWeight: "800", color: colors.textPrimary, textAlign: "center", letterSpacing: -0.5 },
+  newBtn: { backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  newBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
   spinner: { marginTop: 60 },
   list: { paddingBottom: 40 },
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 },
-  emptyText: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },
-  emptySubtext: { fontSize: 14, color: colors.textMuted, textAlign: "center" },
-  emptyButton: {
-    marginTop: 8,
-    backgroundColor: colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 14,
+  listCard: {
+    backgroundColor: colors.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    borderWidth: 1, borderBottomWidth: 0, borderColor: colors.border,
   },
-  emptyButtonText: { fontSize: 15, fontWeight: "700", color: "#000" },
+  listCardFooter: {
+    backgroundColor: colors.surface, borderBottomLeftRadius: 16, borderBottomRightRadius: 16,
+    borderWidth: 1, borderTopWidth: 0, borderColor: colors.border, height: 4,
+  },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
+    backgroundColor: colors.surface, padding: 16,
+    flexDirection: "row", alignItems: "center", gap: 14,
+    borderWidth: 1, borderColor: colors.border,
+    shadowColor: "#000", shadowOpacity: 0.02, shadowOffset: { width: 0, height: 1 }, shadowRadius: 4,
   },
-  cardPressed: { opacity: 0.75 },
+  cardBorder: { borderTopWidth: 0 },
   cardAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 46, height: 46, borderRadius: 14, backgroundColor: colors.primaryLight,
+    alignItems: "center", justifyContent: "center",
   },
-  cardAvatarText: { fontSize: 20, fontWeight: "700", color: "#000" },
+  cardAvatarText: { fontSize: 16, fontWeight: "800", color: colors.primaryDark },
   cardBody: { flex: 1 },
   cardName: { fontSize: 16, fontWeight: "700", color: colors.textPrimary },
   cardMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   chevron: { fontSize: 22, color: colors.textMuted },
+  empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 },
+  emptyIcon: { marginBottom: 8 },
+  emptyTitle: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },
+  emptySubtext: { fontSize: 14, color: colors.textMuted, textAlign: "center" },
+  emptyButton: {
+    marginTop: 8, backgroundColor: colors.primary,
+    paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14,
+  },
+  emptyButtonText: { fontSize: 15, fontWeight: "700", color: "#fff" },
 });

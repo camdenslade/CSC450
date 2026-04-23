@@ -1,163 +1,39 @@
-// apps/mobile/src/screens/profile/ProfileScreen.tsx
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+  Alert, Pressable, ScrollView, StyleSheet, Text, View,
 } from "react-native";
+import { Image } from "expo-image";
+import { Ionicons } from "@expo/vector-icons";
 import { Layout } from "../../shared/Layout";
-import { colors } from "../../theme/colors";
+import { useColors } from "../../theme/colors";
+import { useTheme } from "../../theme/ThemeContext";
 import { TabKey } from "../../shared/NavBar";
 import { useAuth } from "../../auth/AuthContext";
+import { useData } from "../../store/DataContext";
 import { ApiUser, ApiPaymentHandle } from "../../api/client";
+import { PlatformIcon } from "../../shared/PlatformIcon";
 
 type Platform = "paypal" | "venmo" | "cashapp";
 
-const PLATFORMS: { key: Platform; label: string; placeholder: string }[] = [
-  { key: "venmo", label: "Venmo", placeholder: "@handle" },
-  { key: "paypal", label: "PayPal", placeholder: "paypal.me/handle" },
-  { key: "cashapp", label: "Cash App", placeholder: "$cashtag" },
+const PLATFORMS: { key: Platform; label: string }[] = [
+  { key: "venmo",   label: "Venmo" },
+  { key: "paypal",  label: "PayPal" },
+  { key: "cashapp", label: "Cash App" },
 ];
 
 type ProfileScreenProps = {
   onTabPress?: (tab: TabKey) => void;
+  onEditProfile?: (profile: ApiUser, handles: ApiPaymentHandle[]) => void;
 };
 
-export function ProfileScreen({ onTabPress }: ProfileScreenProps) {
-  const { apiClient, signOut } = useAuth();
+export function ProfileScreen({ onTabPress, onEditProfile }: ProfileScreenProps) {
+  const { signOut, deleteAccount } = useAuth();
+  const { profile, handles, refreshProfile } = useData();
+  const { mode, setMode } = useTheme();
+  const c = useColors();
+  const s = makeStyles(c);
 
-  // Profile
-  const [profile, setProfile] = useState<ApiUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [displayName, setDisplayName] = useState("");
-  const [defaultPlatform, setDefaultPlatform] = useState<Platform | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  // Payment handles
-  const [handles, setHandles] = useState<ApiPaymentHandle[]>([]);
-  const [editingHandle, setEditingHandle] = useState<Platform | null>(null);
-  const [handleValue, setHandleValue] = useState("");
-  const [savingHandle, setSavingHandle] = useState(false);
-
-  // Contact info
-  const [editingContact, setEditingContact] = useState(false);
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [savingContact, setSavingContact] = useState(false);
-
-  // ---------------------------------------------------------
-
-  useEffect(() => {
-    Promise.all([
-      apiClient.get<ApiUser>("/users/me"),
-      apiClient.get<ApiPaymentHandle[]>("/payments/handles"),
-    ])
-      .then(([user, h]) => {
-        setProfile(user);
-        setDisplayName(user.displayName);
-        setDefaultPlatform(user.defaultPlatform);
-        setHandles(h);
-      })
-      .catch((e: Error) => Alert.alert("Error", e.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  // ---------------------------------------------------------
-
-  async function handleSaveProfile() {
-    if (!displayName.trim()) {
-      Alert.alert("Required", "Display name cannot be empty.");
-      return;
-    }
-    setSaving(true);
-    try {
-      const updated = await apiClient.patch<ApiUser>("/users/me", {
-        displayName: displayName.trim(),
-        ...(defaultPlatform ? { defaultPlatform } : {}),
-      });
-      setProfile(updated);
-      setEditing(false);
-    } catch (e: unknown) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Failed to save.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function openEditHandle(platform: Platform) {
-    const existing = handles.find((h) => h.platform === platform);
-    setHandleValue(existing?.handle ?? "");
-    setEditingHandle(platform);
-  }
-
-  async function handleSaveHandle() {
-    if (!editingHandle) return;
-    const value = handleValue.trim();
-    if (!value) {
-      // Delete the handle
-      await handleDeleteHandle(editingHandle);
-      return;
-    }
-    setSavingHandle(true);
-    try {
-      const updated = await apiClient.post<ApiPaymentHandle>("/payments/handles", {
-        platform: editingHandle,
-        handle: value,
-      });
-      setHandles((prev) => {
-        const filtered = prev.filter((h) => h.platform !== editingHandle);
-        return [...filtered, updated];
-      });
-      setEditingHandle(null);
-    } catch (e: unknown) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Failed to save handle.");
-    } finally {
-      setSavingHandle(false);
-    }
-  }
-
-  async function handleDeleteHandle(platform: Platform) {
-    setSavingHandle(true);
-    try {
-      await apiClient.del(`/payments/handles/${platform}`);
-      setHandles((prev) => prev.filter((h) => h.platform !== platform));
-      setEditingHandle(null);
-    } catch (e: unknown) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Failed to remove handle.");
-    } finally {
-      setSavingHandle(false);
-    }
-  }
-
-  async function handleSaveContact() {
-    const p = phone.trim();
-    const em = email.trim();
-    if (!p && !em) {
-      Alert.alert("Required", "Enter a phone number or email to register.");
-      return;
-    }
-    setSavingContact(true);
-    try {
-      await apiClient.patch("/users/me", {
-        ...(p ? { phone: p } : {}),
-        ...(em ? { email: em } : {}),
-      });
-      setPhone("");
-      setEmail("");
-      setEditingContact(false);
-      Alert.alert("Saved", "Contact info registered. Friends can now find you by phone or email.");
-    } catch (e: unknown) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Failed to save contact info.");
-    } finally {
-      setSavingContact(false);
-    }
-  }
+  useEffect(() => { refreshProfile(); }, []);
 
   function handleLogout() {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -166,321 +42,181 @@ export function ProfileScreen({ onTabPress }: ProfileScreenProps) {
     ]);
   }
 
-  // ---------------------------------------------------------
-
-  if (loading) {
-    return (
-      <Layout activeTab="Profile" onTabPress={onTabPress}>
-        <ActivityIndicator color={colors.primary} style={styles.spinner} />
-      </Layout>
+  function handleDeleteAccount() {
+    Alert.alert(
+      "Delete Account",
+      "This will permanently delete your account and all your data. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () =>
+            Alert.alert("Are you sure?", "Your account will be gone forever.", [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Yes, Delete",
+                style: "destructive",
+                onPress: async () => {
+                  try {
+                    await deleteAccount();
+                  } catch (e: unknown) {
+                    Alert.alert("Error", e instanceof Error ? e.message : "Failed to delete account.");
+                  }
+                },
+              },
+            ]),
+        },
+      ],
     );
   }
 
+  const initials = (profile?.displayName ?? "?").split(" ")
+    .map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+
   return (
     <Layout activeTab="Profile" onTabPress={onTabPress}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>Profile</Text>
+      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+        <Text style={s.pageTitle}>Profile</Text>
 
-        {/* Avatar + name */}
-        <View style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {(profile?.displayName ?? "?").charAt(0).toUpperCase()}
-            </Text>
-          </View>
-          {editing ? (
-            <TextInput
-              style={styles.nameInput}
-              value={displayName}
-              onChangeText={setDisplayName}
-              autoFocus
-              placeholder="Display name"
-              placeholderTextColor={colors.textMuted}
-            />
-          ) : (
-            <Text style={styles.name}>{profile?.displayName ?? ""}</Text>
+        {/* Hero card */}
+        <View style={s.heroCard}>
+          {profile?.avatarUrl
+            ? <Image source={{ uri: profile.avatarUrl }} style={s.avatarImg} />
+            : (
+              <View style={s.avatar}>
+                <Text style={s.avatarText}>{initials}</Text>
+              </View>
+            )}
+
+          <Text style={s.name}>{profile?.displayName ?? ""}</Text>
+          <Text style={s.nameSub}>TabUp member</Text>
+          {profile?.defaultPlatform && (
+            <View style={s.defaultPlatformBadge}>
+              <PlatformIcon platform={profile.defaultPlatform as Platform} size={14} />
+              <Text style={s.defaultPlatformText}>
+                {PLATFORMS.find((p) => p.key === profile.defaultPlatform)?.label ?? profile.defaultPlatform}
+              </Text>
+            </View>
           )}
         </View>
 
-        {/* Settings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Settings</Text>
+        <Pressable style={s.editBtn} onPress={() => profile && onEditProfile?.(profile, handles)}>
+          <Text style={s.editBtnText}>Edit Profile</Text>
+        </Pressable>
 
-          {/* Default payment platform */}
-          <View style={styles.settingItem}>
-            <Text style={styles.settingLabel}>Default Payment Platform</Text>
-            <View style={styles.platformRow}>
-              {PLATFORMS.map((pl) => (
-                <Pressable
-                  key={pl.key}
-                  style={[
-                    styles.platformChip,
-                    (editing ? defaultPlatform : profile?.defaultPlatform) === pl.key &&
-                      styles.platformChipActive,
-                  ]}
-                  onPress={() => editing && setDefaultPlatform(pl.key)}
-                >
-                  <Text
-                    style={[
-                      styles.platformChipText,
-                      (editing ? defaultPlatform : profile?.defaultPlatform) === pl.key &&
-                        styles.platformChipTextActive,
-                    ]}
-                  >
-                    {pl.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        </View>
-
-        {/* Edit / Save / Cancel */}
-        {editing ? (
-          <View style={styles.editActions}>
-            <Pressable
-              style={[styles.saveButton, saving && styles.buttonDisabled]}
-              onPress={handleSaveProfile}
-              disabled={saving}
-            >
-              {saving
-                ? <ActivityIndicator color="#000" />
-                : <Text style={styles.saveButtonText}>Save</Text>}
-            </Pressable>
-            <Pressable
-              style={styles.cancelButton}
-              onPress={() => {
-                setDisplayName(profile?.displayName ?? "");
-                setDefaultPlatform(profile?.defaultPlatform ?? null);
-                setEditing(false);
-              }}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <Pressable style={styles.editButton} onPress={() => setEditing(true)}>
-            <Text style={styles.editButtonText}>Edit Profile</Text>
-          </Pressable>
-        )}
-
-        {/* Payment Handles */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Payment Handles</Text>
-          <Text style={styles.sectionHint}>
-            Friends use these to send you money through PayPal, Venmo, and Cash App.
-          </Text>
-          {PLATFORMS.map((pl) => {
+        {/* Payment handles */}
+        <Text style={s.sectionTitle}>Payment Handles</Text>
+        <Text style={s.sectionHint}>Friends use these to pay you back.</Text>
+        <View style={s.card}>
+          {PLATFORMS.map((pl, i) => {
             const existing = handles.find((h) => h.platform === pl.key);
-            const isEditing = editingHandle === pl.key;
             return (
-              <View key={pl.key} style={styles.handleRow}>
-                <View style={styles.handleInfo}>
-                  <Text style={styles.handlePlatform}>{pl.label}</Text>
-                  {isEditing ? (
-                    <TextInput
-                      style={styles.handleInput}
-                      value={handleValue}
-                      onChangeText={setHandleValue}
-                      placeholder={pl.placeholder}
-                      placeholderTextColor={colors.textMuted}
-                      autoFocus
-                      autoCorrect={false}
-                      autoCapitalize="none"
-                    />
-                  ) : (
-                    <Text style={existing ? styles.handleValue : styles.handleEmpty}>
-                      {existing ? existing.handle : "Not set"}
-                    </Text>
-                  )}
+              <View key={pl.key} style={[s.handleRow, i > 0 && s.handleRowBorder]}>
+                <PlatformIcon platform={pl.key} size={28} />
+                <View style={s.handleInfo}>
+                  <Text style={s.handlePlatform}>{pl.label}</Text>
+                  <Text style={existing ? s.handleValue : s.handleEmpty}>
+                    {existing ? existing.handle : "Not set"}
+                  </Text>
                 </View>
-                {isEditing ? (
-                  <View style={styles.handleActions}>
-                    <Pressable
-                      style={[styles.handleSaveBtn, savingHandle && styles.buttonDisabled]}
-                      onPress={handleSaveHandle}
-                      disabled={savingHandle}
-                    >
-                      {savingHandle
-                        ? <ActivityIndicator color="#000" size="small" />
-                        : <Text style={styles.handleSaveBtnText}>Save</Text>}
-                    </Pressable>
-                    <Pressable
-                      style={styles.handleCancelBtn}
-                      onPress={() => setEditingHandle(null)}
-                    >
-                      <Text style={styles.handleCancelBtnText}>Cancel</Text>
-                    </Pressable>
-                  </View>
-                ) : (
-                  <Pressable
-                    style={styles.handleEditBtn}
-                    onPress={() => openEditHandle(pl.key)}
-                  >
-                    <Text style={styles.handleEditBtnText}>
-                      {existing ? "Edit" : "Add"}
-                    </Text>
-                  </Pressable>
-                )}
               </View>
             );
           })}
         </View>
 
-        {/* Contact Info */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Contact Info</Text>
-          <Text style={styles.sectionHint}>
-            Register your phone or email so friends can find you. Stored as a private hash -- your raw info is never saved.
-          </Text>
-          {editingContact ? (
-            <View style={styles.contactForm}>
-              <TextInput
-                style={styles.contactInput}
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="Phone (e.g. +15551234567)"
-                placeholderTextColor={colors.textMuted}
-                keyboardType="phone-pad"
-                autoCapitalize="none"
-              />
-              <TextInput
-                style={styles.contactInput}
-                value={email}
-                onChangeText={setEmail}
-                placeholder="Email address"
-                placeholderTextColor={colors.textMuted}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-              <View style={styles.editActions}>
-                <Pressable
-                  style={[styles.saveButton, savingContact && styles.buttonDisabled]}
-                  onPress={handleSaveContact}
-                  disabled={savingContact}
-                >
-                  {savingContact
-                    ? <ActivityIndicator color="#000" />
-                    : <Text style={styles.saveButtonText}>Save</Text>}
-                </Pressable>
-                <Pressable
-                  style={styles.cancelButton}
-                  onPress={() => {
-                    setPhone("");
-                    setEmail("");
-                    setEditingContact(false);
-                  }}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </Pressable>
-              </View>
-            </View>
-          ) : (
-            <Pressable style={styles.editButton} onPress={() => setEditingContact(true)}>
-              <Text style={styles.editButtonText}>Update Contact Info</Text>
-            </Pressable>
-          )}
+        {/* Appearance */}
+        <Text style={s.sectionTitle}>Appearance</Text>
+        <View style={s.card}>
+          {(["light", "dark", "system"] as const).map((m, i) => {
+            const icon = m === "light" ? "sunny-outline" : m === "dark" ? "moon-outline" : "phone-portrait-outline";
+            const label = m === "light" ? "Light" : m === "dark" ? "Dark" : "System";
+            return (
+              <Pressable
+                key={m}
+                style={[s.themeRow, i > 0 && s.handleRowBorder]}
+                onPress={() => setMode(m)}
+              >
+                <Ionicons name={icon} size={20} color={c.textSecondary} style={{ marginRight: 14 }} />
+                <Text style={s.themeLabel}>{label}</Text>
+                {mode === m && <Ionicons name="checkmark" size={18} color={c.primary} />}
+              </Pressable>
+            );
+          })}
         </View>
 
-        <Pressable style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutButtonText}>Sign Out</Text>
+        <Pressable style={s.logoutBtn} onPress={handleLogout}>
+          <Text style={s.logoutText}>Sign Out</Text>
+        </Pressable>
+
+        <Pressable style={s.deleteBtn} onPress={handleDeleteAccount}>
+          <Text style={s.deleteText}>Delete Account</Text>
         </Pressable>
       </ScrollView>
     </Layout>
   );
 }
 
-const styles = StyleSheet.create({
-  spinner: { marginTop: 60 },
-  content: { paddingBottom: 120 },
-  title: { fontSize: 28, fontWeight: "700", color: colors.textPrimary, marginBottom: 20 },
-  profileCard: {
-    backgroundColor: colors.surface, borderRadius: 16, padding: 20,
-    alignItems: "center", marginBottom: 20,
-  },
-  avatar: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primary,
-    alignItems: "center", justifyContent: "center", marginBottom: 12,
-  },
-  avatarText: { fontSize: 30, fontWeight: "700", color: "#000" },
-  name: { fontSize: 20, fontWeight: "700", color: colors.textPrimary },
-  nameInput: {
-    fontSize: 20, fontWeight: "700", color: colors.textPrimary,
-    borderBottomWidth: 2, borderBottomColor: colors.primary,
-    paddingVertical: 4, minWidth: 200, textAlign: "center",
-  },
-  section: { marginBottom: 20 },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: colors.textPrimary, marginBottom: 6 },
-  sectionHint: { fontSize: 13, color: colors.textMuted, marginBottom: 12 },
-  settingItem: {
-    backgroundColor: colors.surface, borderRadius: 14, padding: 16, marginBottom: 10,
-  },
-  settingLabel: { fontSize: 14, fontWeight: "600", color: colors.textMuted, marginBottom: 10 },
-  platformRow: { flexDirection: "row", gap: 8 },
-  platformChip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 10,
-    borderWidth: 1, borderColor: colors.textMuted,
-  },
-  platformChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  platformChipText: { fontSize: 13, fontWeight: "600", color: colors.textMuted },
-  platformChipTextActive: { color: "#000" },
-  editActions: { flexDirection: "row", gap: 10, marginBottom: 12 },
-  saveButton: {
-    flex: 1, backgroundColor: colors.primary, paddingVertical: 13,
-    borderRadius: 14, alignItems: "center",
-  },
-  buttonDisabled: { opacity: 0.6 },
-  saveButtonText: { fontSize: 15, fontWeight: "600", color: "#000" },
-  cancelButton: {
-    flex: 1, backgroundColor: colors.surface, paddingVertical: 13,
-    borderRadius: 14, alignItems: "center",
-  },
-  cancelButtonText: { fontSize: 15, fontWeight: "600", color: colors.textMuted },
-  editButton: {
-    backgroundColor: colors.surface, paddingVertical: 13, borderRadius: 14,
-    alignItems: "center", marginBottom: 12,
-  },
-  editButtonText: { fontSize: 15, fontWeight: "600", color: colors.primary },
-
-  // Handles
-  handleRow: {
-    backgroundColor: colors.surface, borderRadius: 14, padding: 14,
-    marginBottom: 8, flexDirection: "row", alignItems: "center", gap: 12,
-  },
-  handleInfo: { flex: 1, gap: 4 },
-  handlePlatform: { fontSize: 13, fontWeight: "600", color: colors.textMuted },
-  handleValue: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
-  handleEmpty: { fontSize: 15, color: colors.textMuted, fontStyle: "italic" },
-  handleInput: {
-    fontSize: 15, fontWeight: "600", color: colors.textPrimary,
-    borderBottomWidth: 1.5, borderBottomColor: colors.primary, paddingVertical: 2,
-  },
-  handleActions: { flexDirection: "row", gap: 8 },
-  handleSaveBtn: {
-    backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
-  },
-  handleSaveBtnText: { fontSize: 13, fontWeight: "600", color: "#000" },
-  handleCancelBtn: {
-    backgroundColor: "transparent", paddingHorizontal: 10, paddingVertical: 8,
-  },
-  handleCancelBtnText: { fontSize: 13, fontWeight: "600", color: colors.textMuted },
-  handleEditBtn: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
-    borderWidth: 1, borderColor: colors.primary,
-  },
-  handleEditBtnText: { fontSize: 13, fontWeight: "600", color: colors.primary },
-
-  // Contact form
-  contactForm: { gap: 10 },
-  contactInput: {
-    backgroundColor: colors.surface, borderRadius: 12, padding: 14,
-    fontSize: 15, color: colors.textPrimary,
-  },
-
-  // Logout
-  logoutButton: {
-    borderWidth: 1.5, borderColor: colors.error, paddingVertical: 13,
-    borderRadius: 14, alignItems: "center",
-  },
-  logoutButtonText: { fontSize: 15, fontWeight: "600", color: colors.error },
-});
+function makeStyles(c: ReturnType<typeof useColors>) {
+  return StyleSheet.create({
+    content: { paddingHorizontal: 16, paddingBottom: 100 },
+    pageTitle: {
+      fontSize: 28, fontWeight: "800", color: c.textPrimary,
+      letterSpacing: -0.5, marginBottom: 20,
+    },
+    heroCard: {
+      backgroundColor: c.surface, borderRadius: 20, padding: 24,
+      alignItems: "center", marginBottom: 12,
+      borderWidth: 1, borderColor: c.border,
+      shadowColor: "#000", shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 2,
+    },
+    avatarImg: { width: 80, height: 80, borderRadius: 40, marginBottom: 12 },
+    avatar: {
+      width: 80, height: 80, borderRadius: 40, backgroundColor: c.primary,
+      alignItems: "center", justifyContent: "center", marginBottom: 12,
+    },
+    avatarText: { fontSize: 28, fontWeight: "800", color: "#fff" },
+    name: { fontSize: 22, fontWeight: "800", color: c.textPrimary, letterSpacing: -0.3 },
+    nameSub: { fontSize: 13, color: c.textMuted, marginTop: 4 },
+    defaultPlatformBadge: {
+      flexDirection: "row", alignItems: "center", gap: 5,
+      marginTop: 10, backgroundColor: c.primaryLight,
+      paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+    },
+    defaultPlatformText: { fontSize: 12, fontWeight: "700", color: c.primaryDark },
+    editBtn: {
+      backgroundColor: c.surface, paddingVertical: 14, borderRadius: 14,
+      alignItems: "center", marginBottom: 24, borderWidth: 1, borderColor: c.border,
+    },
+    editBtnText: { fontSize: 15, fontWeight: "600", color: c.primary },
+    sectionTitle: { fontSize: 17, fontWeight: "700", color: c.textPrimary, marginBottom: 4 },
+    sectionHint: { fontSize: 13, color: c.textMuted, marginBottom: 12, lineHeight: 18 },
+    card: {
+      backgroundColor: c.surface, borderRadius: 16, padding: 0,
+      marginBottom: 24, borderWidth: 1, borderColor: c.border,
+      overflow: "hidden",
+      shadowColor: "#000", shadowOpacity: 0.03, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 1,
+    },
+    handleRow: { flexDirection: "row", alignItems: "center", paddingVertical: 14, paddingHorizontal: 16 },
+    handleRowBorder: { borderTopWidth: 1, borderTopColor: c.divider },
+    handleInfo: { flex: 1, marginLeft: 14 },
+    handlePlatform: { fontSize: 12, fontWeight: "600", color: c.textMuted },
+    handleValue: { fontSize: 15, fontWeight: "600", color: c.textPrimary, marginTop: 2 },
+    handleEmpty: { fontSize: 14, color: c.textMuted, fontStyle: "italic", marginTop: 2 },
+    themeRow: {
+      flexDirection: "row", alignItems: "center",
+      paddingVertical: 14, paddingHorizontal: 16,
+    },
+    themeLabel: { flex: 1, fontSize: 15, fontWeight: "500", color: c.textPrimary },
+    logoutBtn: {
+      marginTop: 8, paddingVertical: 14, borderRadius: 14,
+      alignItems: "center", borderWidth: 1.5, borderColor: c.danger,
+    },
+    logoutText: { fontSize: 15, fontWeight: "600", color: c.danger },
+    deleteBtn: {
+      marginTop: 12, paddingVertical: 14, borderRadius: 14,
+      alignItems: "center",
+    },
+    deleteText: { fontSize: 14, fontWeight: "500", color: c.textMuted },
+  });
+}

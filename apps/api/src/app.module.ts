@@ -4,6 +4,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 
 import { SecretsModule } from './secrets/secrets.module';
 import { TypeOrmConfigService } from './database/typeorm.config';
@@ -36,6 +37,7 @@ import { AppService } from './app.service';
 
         // 100 req/min per IP globally; tighten per route with @Throttle()
         ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
+        ScheduleModule.forRoot(),
 
         AuthModule,
         UsersModule,

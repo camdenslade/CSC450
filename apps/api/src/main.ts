@@ -29,6 +29,10 @@ async function bootstrap(): Promise<void> {
         bodyParser: true,
     });
 
+    // Raise body limit — base64-encoded receipt photos can be 4–6 MB
+    app.use(require('express').json({ limit: '20mb' }));
+    app.use(require('express').urlencoded({ extended: true, limit: '20mb' }));
+
     // Security headers are applied first so every response is covered
     app.use(
         helmet({

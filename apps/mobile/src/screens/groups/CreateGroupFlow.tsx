@@ -1,15 +1,9 @@
 // apps/mobile/src/screens/groups/CreateGroupFlow.tsx
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+  ActivityIndicator, Alert, Animated, FlatList, Pressable,
+  ScrollView, StyleSheet, Text, TextInput, View,
+  KeyboardAvoidingView, Platform,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Background } from "../../shared/Background";
@@ -21,28 +15,42 @@ type Props = {
   onComplete: (groupId: string) => void;
 };
 
-type Step = "name" | "members";
-
 type SearchResult = {
   id: string;
   displayName: string;
 };
 
+function initials(name: string) {
+  return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+}
+
 export function CreateGroupFlow({ onBack, onComplete }: Props) {
   const { apiClient } = useAuth();
 
-  const [step, setStep] = useState<Step>("name");
+  const [step, setStep] = useState<"name" | "members">("name");
+  const stepAnim = useRef(new Animated.Value(1)).current;
+  const animating = useRef(false);
+
+  function animateStep(next: "name" | "members") {
+    if (animating.current) return;
+    animating.current = true;
+    Animated.timing(stepAnim, { toValue: 0, duration: 120, useNativeDriver: true }).start(() => {
+      setStep(next);
+      stepAnim.setValue(0);
+      Animated.timing(stepAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start(() => {
+        animating.current = false;
+      });
+    });
+  }
   const [groupName, setGroupName] = useState("");
 
-  // Member search
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
   const [selectedMembers, setSelectedMembers] = useState<SearchResult[]>([]);
 
   const [submitting, setSubmitting] = useState(false);
-
-  // ---------------------------------------------------------
 
   async function handleSearch() {
     const q = query.trim();
@@ -51,12 +59,11 @@ export function CreateGroupFlow({ onBack, onComplete }: Props) {
       return;
     }
     setSearching(true);
+    setSearched(false);
     try {
-      const data = await apiClient.get<SearchResult[]>(
-        `/users/search?q=${encodeURIComponent(q)}`
-      );
+      const data = await apiClient.get<SearchResult[]>(`/users/search?q=${encodeURIComponent(q)}`);
       setResults(data);
-      if (data.length === 0) Alert.alert("No results", "No TabUp users found with that name.");
+      setSearched(true);
     } catch (e: unknown) {
       Alert.alert("Error", e instanceof Error ? e.message : "Search failed.");
     } finally {
@@ -65,10 +72,11 @@ export function CreateGroupFlow({ onBack, onComplete }: Props) {
   }
 
   function toggleMember(user: SearchResult) {
-    setSelectedMembers((prev) => {
-      const already = prev.some((m) => m.id === user.id);
-      return already ? prev.filter((m) => m.id !== user.id) : [...prev, user];
-    });
+    setSelectedMembers((prev) =>
+      prev.some((m) => m.id === user.id)
+        ? prev.filter((m) => m.id !== user.id)
+        : [...prev, user]
+    );
   }
 
   async function handleCreate() {
@@ -91,8 +99,6 @@ export function CreateGroupFlow({ onBack, onComplete }: Props) {
     }
   }
 
-  // ---------------------------------------------------------
-
   function renderResult({ item }: { item: SearchResult }) {
     const selected = selectedMembers.some((m) => m.id === item.id);
     return (
@@ -100,143 +106,162 @@ export function CreateGroupFlow({ onBack, onComplete }: Props) {
         style={[styles.resultCard, selected && styles.resultCardSelected]}
         onPress={() => toggleMember(item)}
       >
-        <View style={styles.resultAvatar}>
-          <Text style={styles.resultAvatarText}>
-            {item.displayName.charAt(0).toUpperCase()}
-          </Text>
+        <View style={[styles.avatarSmall, selected && styles.avatarSmallSelected]}>
+          <Text style={styles.avatarSmallText}>{initials(item.displayName)}</Text>
         </View>
         <Text style={styles.resultName}>{item.displayName}</Text>
-        <View style={[styles.checkCircle, selected && styles.checkCircleActive]}>
-          {selected && <Text style={styles.checkMark}>&#10003;</Text>}
+        <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+          {selected && <Text style={styles.checkmark}>✓</Text>}
         </View>
       </Pressable>
     );
   }
 
-  // ---------------------------------------------------------
-
   return (
     <SafeAreaProvider>
       <Background>
-        <SafeAreaView style={styles.container} edges={["top", "left", "right", "bottom"]}>
-          {/* Header */}
-          <View style={styles.header}>
-            <Pressable
-              onPress={step === "name" ? onBack : () => setStep("name")}
-              hitSlop={12}
-            >
-              <Text style={styles.back}>{step === "name" ? "Cancel" : "Back"}</Text>
-            </Pressable>
-            <Text style={styles.title}>
-              {step === "name" ? "New Group" : "Add Members"}
-            </Text>
-            <View style={styles.headerSpacer} />
-          </View>
-
-          {/* Step 1 - name */}
-          {step === "name" && (
-            <View style={styles.stepContent}>
-              <Text style={styles.stepLabel}>Group Name</Text>
-              <TextInput
-                style={styles.nameInput}
-                value={groupName}
-                onChangeText={setGroupName}
-                placeholder="e.g. Apartment, Road Trip..."
-                placeholderTextColor={colors.textMuted}
-                autoFocus
-                maxLength={80}
-                returnKeyType="next"
-                onSubmitEditing={() => {
-                  if (groupName.trim()) setStep("members");
-                }}
-              />
-              <Pressable
-                style={[styles.nextButton, !groupName.trim() && styles.buttonDisabled]}
-                disabled={!groupName.trim()}
-                onPress={() => setStep("members")}
-              >
-                <Text style={styles.nextButtonText}>Next: Add Members</Text>
+        <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+          <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+            {/* Header */}
+            <View style={styles.header}>
+              <Pressable onPress={step === "name" ? onBack : () => animateStep("name")} hitSlop={12}>
+                <Text style={styles.backText}>{step === "name" ? "Cancel" : "‹ Back"}</Text>
               </Pressable>
+              <Text style={styles.headerTitle}>
+                {step === "name" ? "New Group" : "Add Members"}
+              </Text>
+              <View style={styles.headerSpacer} />
             </View>
-          )}
 
-          {/* Step 2 - members */}
-          {step === "members" && (
-            <ScrollView
-              contentContainerStyle={styles.stepContent}
-              keyboardShouldPersistTaps="handled"
-            >
-              {/* Selected chips */}
-              {selectedMembers.length > 0 && (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.chips}
-                >
-                  {selectedMembers.map((m) => (
-                    <Pressable
-                      key={m.id}
-                      style={styles.chip}
-                      onPress={() => toggleMember(m)}
-                    >
-                      <Text style={styles.chipText}>{m.displayName} x</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              )}
+            {/* Step indicator */}
+            <View style={styles.stepRow}>
+              {(["name", "members"] as const).map((s, i) => (
+                <View key={s} style={styles.stepItem}>
+                  <View style={[styles.stepDot, step === s && styles.stepDotActive, (step === "members" && s === "name") && styles.stepDotDone]}>
+                    {step === "members" && s === "name"
+                      ? <Text style={styles.stepCheck}>✓</Text>
+                      : <Text style={[styles.stepNum, step === s && styles.stepNumActive]}>{i + 1}</Text>}
+                  </View>
+                  <Text style={[styles.stepLabel, step === s && styles.stepLabelActive]}>
+                    {s === "name" ? "Name" : "Members"}
+                  </Text>
+                  {i === 0 && <View style={[styles.stepLine, step === "members" && styles.stepLineDone]} />}
+                </View>
+              ))}
+            </View>
 
-              {/* Search */}
-              <View style={styles.searchRow}>
+            {/* Step 1 - name */}
+            {step === "name" && (
+              <Animated.View style={[styles.stepContent, { opacity: stepAnim }]}>
+                <Text style={styles.stepTitle}>Name your group</Text>
                 <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search by name..."
+                  style={styles.nameInput}
+                  value={groupName}
+                  onChangeText={setGroupName}
+                  placeholder="e.g. Apartment, Road Trip..."
                   placeholderTextColor={colors.textMuted}
-                  value={query}
-                  onChangeText={setQuery}
-                  onSubmitEditing={handleSearch}
-                  returnKeyType="search"
-                  autoCorrect={false}
+                  autoFocus
+                  maxLength={80}
+                  returnKeyType="next"
+                  onSubmitEditing={() => { if (groupName.trim()) animateStep("members"); }}
                 />
-                <Pressable
-                  style={[styles.searchButton, searching && styles.buttonDisabled]}
-                  onPress={handleSearch}
-                  disabled={searching}
-                >
-                  {searching
-                    ? <ActivityIndicator color="#000" />
-                    : <Text style={styles.searchButtonText}>Search</Text>}
-                </Pressable>
-              </View>
+              </Animated.View>
+            )}
 
-              {results.length > 0 && (
-                <FlatList
-                  data={results}
-                  keyExtractor={(r) => r.id}
-                  renderItem={renderResult}
-                  scrollEnabled={false}
-                  contentContainerStyle={styles.resultList}
-                />
-              )}
-
-              {/* Create */}
-              <Pressable
-                style={[styles.createButton, submitting && styles.buttonDisabled]}
-                onPress={handleCreate}
-                disabled={submitting}
+            {/* Step 2 - members */}
+            {step === "members" && (
+              <Animated.ScrollView
+                style={[styles.flex, { opacity: stepAnim }]}
+                contentContainerStyle={styles.membersContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
               >
-                {submitting
-                  ? <ActivityIndicator color="#000" />
-                  : (
-                    <Text style={styles.createButtonText}>
-                      Create Group
-                      {selectedMembers.length > 0
-                        ? ` (${selectedMembers.length + 1} members)`
-                        : " (just you)"}
-                    </Text>
-                  )}
-              </Pressable>
-            </ScrollView>
-          )}
+                <Text style={styles.stepTitle}>Add members</Text>
+                <Text style={styles.stepSubtitle}>Search for TabUp users to add to "{groupName}"</Text>
+
+                {/* Selected chips */}
+                {selectedMembers.length > 0 && (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.chips}
+                  >
+                    {selectedMembers.map((m) => (
+                      <Pressable key={m.id} style={styles.chip} onPress={() => toggleMember(m)}>
+                        <Text style={styles.chipText}>{m.displayName}</Text>
+                        <Text style={styles.chipX}>  ×</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                )}
+
+                {/* Search */}
+                <View style={styles.searchRow}>
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search by name..."
+                    placeholderTextColor={colors.textMuted}
+                    value={query}
+                    onChangeText={setQuery}
+                    onSubmitEditing={handleSearch}
+                    returnKeyType="search"
+                    autoCorrect={false}
+                  />
+                  <Pressable
+                    style={[styles.searchBtn, searching && styles.btnDisabled]}
+                    onPress={handleSearch}
+                    disabled={searching}
+                  >
+                    {searching
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={styles.searchBtnText}>Search</Text>}
+                  </Pressable>
+                </View>
+
+                {results.length > 0 ? (
+                  <FlatList
+                    data={results}
+                    keyExtractor={(r) => r.id}
+                    renderItem={renderResult}
+                    scrollEnabled={false}
+                    contentContainerStyle={styles.resultsList}
+                  />
+                ) : searched ? (
+                  <View style={styles.noResults}>
+                    <Text style={styles.noResultsText}>No users found. Try a different name.</Text>
+                  </View>
+                ) : null}
+              </Animated.ScrollView>
+            )}
+
+            {/* Fixed bottom CTA */}
+            <SafeAreaView edges={["bottom"]} style={styles.bottomBar}>
+              {step === "name" && (
+                <Pressable
+                  style={[styles.cta, !groupName.trim() && styles.ctaDisabled]}
+                  disabled={!groupName.trim()}
+                  onPress={() => animateStep("members")}
+                >
+                  <Text style={styles.ctaText}>Next: Add Members</Text>
+                </Pressable>
+              )}
+              {step === "members" && (
+                <Pressable
+                  style={[styles.cta, submitting && styles.ctaDisabled]}
+                  onPress={handleCreate}
+                  disabled={submitting}
+                >
+                  {submitting
+                    ? <ActivityIndicator color="#fff" />
+                    : (
+                      <Text style={styles.ctaText}>
+                        Create Group{selectedMembers.length > 0 ? ` · ${selectedMembers.length + 1} members` : ""}
+                      </Text>
+                    )}
+                </Pressable>
+              )}
+            </SafeAreaView>
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </Background>
     </SafeAreaProvider>
@@ -244,113 +269,98 @@ export function CreateGroupFlow({ onBack, onComplete }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingTop: 16,
-    paddingHorizontal: 16,
-    paddingBottom: 0,
-  },
+  safeArea: { flex: 1 },
+  flex: { flex: 1 },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 24,
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12,
   },
-  back: { fontSize: 15, fontWeight: "600", color: colors.primary, minWidth: 60 },
-  title: {
-    flex: 1,
-    fontSize: 20,
-    fontWeight: "700",
-    color: colors.textPrimary,
-    textAlign: "center",
+  backText: { fontSize: 15, fontWeight: "600", color: colors.primary, minWidth: 64 },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: "800", color: colors.textPrimary, textAlign: "center" },
+  headerSpacer: { minWidth: 64 },
+
+  stepRow: { flexDirection: "row", alignItems: "flex-start", paddingHorizontal: 40, marginBottom: 8, justifyContent: "center" },
+  stepItem: { alignItems: "center", position: "relative", flex: 1 },
+  stepDot: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: colors.border, alignItems: "center", justifyContent: "center",
   },
-  headerSpacer: { minWidth: 60 },
-  stepContent: { paddingBottom: 40, gap: 14 },
-  stepLabel: { fontSize: 14, fontWeight: "600", color: colors.textMuted },
+  stepDotActive: { backgroundColor: colors.primary },
+  stepDotDone: { backgroundColor: colors.primaryDark },
+  stepNum: { fontSize: 12, fontWeight: "700", color: colors.textMuted },
+  stepNumActive: { color: "#fff" },
+  stepCheck: { fontSize: 12, fontWeight: "700", color: "#fff" },
+  stepLabel: { fontSize: 11, fontWeight: "600", color: colors.textMuted, marginTop: 4 },
+  stepLabelActive: { color: colors.primaryDark },
+  stepLine: {
+    position: "absolute", top: 14, left: "50%", right: "-50%",
+    height: 2, backgroundColor: colors.border, zIndex: -1,
+  },
+  stepLineDone: { backgroundColor: colors.primaryDark },
+
+  stepContent: { paddingHorizontal: 16, paddingTop: 8, gap: 14 },
+  stepTitle: { fontSize: 24, fontWeight: "800", color: colors.textPrimary, letterSpacing: -0.5 },
+  stepSubtitle: { fontSize: 14, color: colors.textMuted, marginTop: -6 },
   nameInput: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 16,
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.textPrimary,
+    backgroundColor: colors.surface, borderRadius: 16,
+    paddingHorizontal: 18, paddingVertical: 18,
+    fontSize: 20, fontWeight: "700", color: colors.textPrimary,
+    borderWidth: 2, borderColor: colors.primary,
   },
-  nextButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 15,
-    borderRadius: 14,
-    alignItems: "center",
-    marginTop: 8,
-  },
-  nextButtonText: { fontSize: 16, fontWeight: "700", color: "#000" },
-  buttonDisabled: { opacity: 0.5 },
+
+  membersContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24, gap: 14 },
   chips: { flexDirection: "row", gap: 8, paddingBottom: 4 },
   chip: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    flexDirection: "row", backgroundColor: colors.primary,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, alignItems: "center",
   },
-  chipText: { fontSize: 13, fontWeight: "600", color: "#000" },
+  chipText: { fontSize: 13, fontWeight: "600", color: "#fff" },
+  chipX: { fontSize: 14, fontWeight: "700", color: "#fff", opacity: 0.7 },
+
   searchRow: { flexDirection: "row", gap: 10 },
   searchInput: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 15,
-    color: colors.textPrimary,
+    flex: 1, backgroundColor: colors.surface, borderRadius: 14,
+    paddingHorizontal: 16, paddingVertical: 14,
+    fontSize: 15, color: colors.textPrimary,
+    borderWidth: 1, borderColor: colors.border,
   },
-  searchButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 18,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
+  searchBtn: {
+    backgroundColor: colors.primary, paddingHorizontal: 18,
+    borderRadius: 14, alignItems: "center", justifyContent: "center",
   },
-  searchButtonText: { fontSize: 15, fontWeight: "600", color: "#000" },
-  resultList: { gap: 8 },
+  btnDisabled: { opacity: 0.5 },
+  searchBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+
+  resultsList: { gap: 8 },
   resultCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+    backgroundColor: colors.surface, borderRadius: 14, padding: 14,
+    flexDirection: "row", alignItems: "center", gap: 12,
+    borderWidth: 1, borderColor: colors.border,
   },
-  resultCardSelected: {
-    borderWidth: 1.5,
-    borderColor: colors.primary,
+  resultCardSelected: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  avatarSmall: {
+    width: 40, height: 40, borderRadius: 12, backgroundColor: colors.primaryLight,
+    alignItems: "center", justifyContent: "center",
   },
-  resultAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  resultAvatarText: { fontSize: 16, fontWeight: "700", color: "#000" },
+  avatarSmallSelected: { backgroundColor: colors.primary },
+  avatarSmallText: { fontSize: 14, fontWeight: "800", color: colors.primaryDark },
   resultName: { flex: 1, fontSize: 15, fontWeight: "600", color: colors.textPrimary },
-  checkCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: colors.textMuted,
-    alignItems: "center",
-    justifyContent: "center",
+  checkbox: {
+    width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: colors.border,
+    alignItems: "center", justifyContent: "center",
   },
-  checkCircleActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+  checkboxSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+  checkmark: { fontSize: 12, fontWeight: "700", color: "#fff" },
+
+  noResults: { paddingVertical: 20, alignItems: "center" },
+  noResultsText: { fontSize: 14, color: colors.textMuted },
+
+  bottomBar: { paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.background },
+  cta: {
+    backgroundColor: colors.primary, paddingVertical: 16,
+    borderRadius: 16, alignItems: "center",
+    shadowColor: colors.primary, shadowOpacity: 0.3, shadowOffset: { width: 0, height: 4 }, shadowRadius: 12,
   },
-  checkMark: { fontSize: 14, color: "#000", fontWeight: "700" },
-  createButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 15,
-    borderRadius: 14,
-    alignItems: "center",
-    marginTop: 8,
-  },
-  createButtonText: { fontSize: 16, fontWeight: "700", color: "#000" },
+  ctaDisabled: { opacity: 0.45, shadowOpacity: 0 },
+  ctaText: { fontSize: 17, fontWeight: "800", color: "#fff" },
 });

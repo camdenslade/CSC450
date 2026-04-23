@@ -11,5 +11,8 @@
     "migration:run": "typeorm-ts-node-commonjs migration:run -d apps/api/src/database/data-source.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d apps/api/src/database/data-source.ts",
     "migration:show": "typeorm-ts-node-commonjs migration:show -d apps/api/src/database/data-source.ts"
+  },
+  "dependencies": {
+    "@nestjs/schedule": "^6.1.3"
   }
 }
