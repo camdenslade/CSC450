@@ -50,6 +50,8 @@ export class S3Service implements OnModuleInit {
             region: AWS_REGION,
             forcePathStyle: false,
             tls: true,
+            requestChecksumCalculation: "WHEN_REQUIRED",
+            responseChecksumValidation: "WHEN_REQUIRED",
         });
 
         this.logger.log(`S3Service initialized for bucket "${this.bucket}"`);
@@ -113,12 +115,10 @@ export class S3Service implements OnModuleInit {
             Bucket: this.bucket,
             Key: key,
             ContentType: mimeType,
-            ACL: 'private',
-            ServerSideEncryption: 'AES256',
         });
 
         const uploadUrl = await getSignedUrl(this.s3, command, {
-            expiresIn: 300, // 5 minutes
+            expiresIn: 300,
         });
 
         const secureUploadUrl = uploadUrl.replace(/^http:/, 'https:');
@@ -129,6 +129,16 @@ export class S3Service implements OnModuleInit {
             uploadUrl: secureUploadUrl,
             key,
         };
+    }
+
+    async putObject(key: string, body: Buffer, contentType: string): Promise<void> {
+        this.ensureKeySafe(key);
+        await this.s3.send(new PutObjectCommand({
+            Bucket:      this.bucket,
+            Key:         key,
+            Body:        body,
+            ContentType: contentType,
+        }));
     }
 
     async createReadUrl(key: string, expiresInSeconds = 900): Promise<string> {

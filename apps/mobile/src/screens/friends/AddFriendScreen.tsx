@@ -1,39 +1,72 @@
 // apps/mobile/src/screens/friends/AddFriendScreen.tsx
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
-  View, Text, StyleSheet, TextInput, Pressable,
-  ScrollView, Alert, ActivityIndicator, FlatList,
+  View, Text, StyleSheet, TextInput, Pressable, ScrollView, Alert,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
 } from "react-native";
-import { colors } from "../../theme/colors";
+import { Image } from "expo-image";
+import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { Background } from "../../shared/Background";
+import { colors, useColors } from "../../theme/colors";
 import { useAuth } from "../../auth/AuthContext";
 
 type AddFriendScreenProps = {
   onBack: () => void;
 };
 
+type SearchUser = { id: string; displayName: string; avatarUrl?: string | null };
+
 type SearchResult = {
-  id: string;
-  displayName: string;
+  user: SearchUser;
+  matchedPlatform: "venmo" | "cashapp" | "paypal" | null;
+  matchedHandle: string | null;
 };
+
+// Ionicons names for each platform
+const PLATFORM_ICON: Record<string, { name: keyof typeof Ionicons.glyphMap; color: string }> = {
+  venmo:   { name: "logo-venmo", color: "#3D95CE" },
+  cashapp: { name: "cash-outline", color: "#00C244" },
+  paypal:  { name: "logo-paypal", color: "#003087" },
+};
+
+function platformPrefix(platform: string): string {
+  if (platform === "venmo") return "@";
+  if (platform === "cashapp") return "$";
+  if (platform === "paypal") return "paypal.me/";
+  return "";
+}
+
+function platformLabel(platform: string): string {
+  if (platform === "cashapp") return "Cash App";
+  return platform.charAt(0).toUpperCase() + platform.slice(1);
+}
+
+function initials(name: string) {
+  return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+}
 
 export function AddFriendScreen({ onBack }: AddFriendScreenProps) {
   const { apiClient } = useAuth();
+  const c = useColors();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [sentIds, setSentIds] = useState<Set<string>>(new Set());
+  const [searched, setSearched] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  async function handleSearch() {
-    const q = query.trim();
+  async function runSearch(q: string) {
     if (q.length < 2) {
-      Alert.alert("Too short", "Enter at least 2 characters to search.");
+      setResults([]);
+      setSearched(false);
       return;
     }
     setSearching(true);
     try {
       const data = await apiClient.get<SearchResult[]>(`/users/search?q=${encodeURIComponent(q)}`);
       setResults(data);
-      if (data.length === 0) Alert.alert("No results", "No TabUp users found with that name.");
+      setSearched(true);
     } catch (e: unknown) {
       Alert.alert("Error", e instanceof Error ? e.message : "Search failed.");
     } finally {
@@ -41,27 +74,33 @@ export function AddFriendScreen({ onBack }: AddFriendScreenProps) {
     }
   }
 
-  async function handleSendRequest(user: SearchResult) {
-    Alert.alert("Friend Request", `Send friend request to ${user.displayName}?`, [
+  function handleQueryChange(text: string) {
+    setQuery(text);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => runSearch(text.trim()), 350);
+  }
+
+  async function handleSearch() {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    runSearch(query.trim());
+  }
+
+  async function handleSendRequest(result: SearchResult) {
+    const { user } = result;
+    Alert.alert("Send Request", `Add ${user.displayName} as a friend?`, [
       { text: "Cancel", style: "cancel" },
       {
-        text: "Send",
+        text: "Send Request",
         onPress: async () => {
           try {
-            // Invite by userId directly via the accept flow would need a new endpoint.
-            // Use the invite-by-name approach: we pass the display name as a known user ID.
-            // Actually, we directly call accept is wrong since we're the initiator.
-            // The backend invite endpoint expects email/phone, but we have a userId.
-            // We need a direct "send request by userId" capability - use the friendId.
-            // For now, send via a direct post. We'll add a by-userId route.
             await apiClient.post("/friends/invite-by-id", { targetUserId: user.id });
             setSentIds((prev) => new Set([...prev, user.id]));
           } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : "Failed to send request.";
             if (msg.includes("Already friends")) {
-              Alert.alert("Already Friends", `You are already friends with ${user.displayName}.`);
+              Alert.alert("Already Friends", `You and ${user.displayName} are already friends.`);
             } else if (msg.includes("request already exists")) {
-              Alert.alert("Already Sent", `You already have a pending request with ${user.displayName}.`);
+              Alert.alert("Already Sent", `A request with ${user.displayName} already exists.`);
             } else {
               Alert.alert("Error", msg);
             }
@@ -71,118 +110,174 @@ export function AddFriendScreen({ onBack }: AddFriendScreenProps) {
     ]);
   }
 
-  const renderResult = ({ item }: { item: SearchResult }) => {
-    const isSent = sentIds.has(item.id);
+  function renderResult(item: SearchResult) {
+    const { user, matchedPlatform, matchedHandle } = item;
+    const isSent = sentIds.has(user.id);
+    const icon = matchedPlatform ? PLATFORM_ICON[matchedPlatform] : null;
     return (
-      <View style={styles.resultCard}>
-        <View style={styles.resultInfo}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{item.displayName.charAt(0).toUpperCase()}</Text>
-          </View>
-          <Text style={styles.resultName}>{item.displayName}</Text>
+      <View key={user.id} style={styles.resultCard}>
+        {/* Avatar */}
+        <View style={styles.avatarWrap}>
+          {user.avatarUrl ? (
+            <Image source={{ uri: user.avatarUrl }} style={styles.avatarImg} />
+          ) : (
+            <Text style={styles.avatarText}>{initials(user.displayName)}</Text>
+          )}
         </View>
+
+        {/* Name + matched handle */}
+        <View style={styles.resultBody}>
+          <Text style={styles.resultName}>{user.displayName}</Text>
+          {matchedPlatform && matchedHandle && icon ? (
+            <View style={styles.handleRow}>
+              <Ionicons name={icon.name} size={13} color={icon.color} />
+              <Text style={styles.platformLabel}>{platformLabel(matchedPlatform)}</Text>
+              <Text style={styles.handleText}>
+                {platformPrefix(matchedPlatform)}{matchedHandle}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* Action */}
         {isSent ? (
           <View style={styles.sentBadge}>
-            <Text style={styles.sentBadgeText}>Sent</Text>
+            <Ionicons name="checkmark" size={13} color={colors.primary} />
+            <Text style={styles.sentText}>Sent</Text>
           </View>
         ) : (
-          <Pressable style={styles.addButton} onPress={() => handleSendRequest(item)}>
-            <Text style={styles.addButtonText}>Add</Text>
+          <Pressable
+            style={({ pressed }) => [styles.addBtn, pressed && { opacity: 0.8 }]}
+            onPress={() => handleSendRequest(item)}
+          >
+            <Text style={styles.addBtnText}>Add</Text>
           </Pressable>
         )}
       </View>
     );
-  };
+  }
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {/* Header */}
-        <View style={styles.header}>
-          <Pressable onPress={onBack} style={styles.backButton}>
-            <Text style={styles.backText}>Back</Text>
-          </Pressable>
-          <Text style={styles.title}>Add Friend</Text>
-          <Text style={styles.subtitle}>Search for a TabUp user by name.</Text>
-        </View>
+    <SafeAreaProvider>
+      <Background>
+        <SafeAreaView style={styles.safeArea} edges={["top", "left", "right", "bottom"]}>
+          <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+            {/* Header */}
+            <View style={styles.header}>
+              <Pressable onPress={onBack} hitSlop={12}>
+                <Text style={styles.backText}>‹ Back</Text>
+              </Pressable>
+              <Text style={styles.headerTitle}>Add Friend</Text>
+              <View style={styles.headerSpacer} />
+            </View>
 
-        {/* Search */}
-        <View style={styles.searchRow}>
-          <TextInput
-            style={styles.input}
-            placeholder="Search by name..."
-            placeholderTextColor={colors.textMuted}
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-            autoCorrect={false}
-          />
-          <Pressable
-            style={[styles.searchButton, searching && styles.searchButtonDisabled]}
-            onPress={handleSearch}
-            disabled={searching}
-          >
-            {searching
-              ? <ActivityIndicator color="#000" />
-              : <Text style={styles.searchButtonText}>Search</Text>}
-          </Pressable>
-        </View>
+            <View style={styles.content}>
+              <Text style={styles.hint}>Search for a TabUp user by name or handle.</Text>
 
-        {/* Results */}
-        {results.length > 0 && (
-          <FlatList
-            data={results}
-            renderItem={renderResult}
-            keyExtractor={(item) => item.id}
-            scrollEnabled={false}
-            contentContainerStyle={styles.resultsList}
-          />
-        )}
-      </ScrollView>
-    </View>
+              {/* Search bar */}
+              <View style={styles.searchRow}>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Name or handle..."
+                  placeholderTextColor={colors.textMuted}
+                  value={query}
+                  onChangeText={handleQueryChange}
+                  onSubmitEditing={handleSearch}
+                  returnKeyType="search"
+                  autoCorrect={false}
+                />
+                <Pressable
+                  style={[styles.searchBtn, searching && styles.searchBtnDisabled]}
+                  onPress={handleSearch}
+                  disabled={searching}
+                >
+                  {searching
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={styles.searchBtnText}>Search</Text>}
+                </Pressable>
+              </View>
+
+              {/* Results */}
+              {results.length > 0 ? (
+                <ScrollView style={styles.resultsList} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+                  {results.map(renderResult)}
+                </ScrollView>
+              ) : searched ? (
+                <View style={styles.emptyBox}>
+                  <Ionicons name="search-outline" size={40} color={c.textMuted} style={styles.emptyIcon} />
+                  <Text style={[styles.emptyTitle, { color: c.textPrimary }]}>No users found</Text>
+                  <Text style={[styles.emptySub, { color: c.textMuted }]}>Try a different name or check the spelling.</Text>
+                </View>
+              ) : null}
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Background>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 16, paddingBottom: 40 },
-  header: { marginBottom: 24 },
-  backButton: { marginBottom: 12 },
-  backText: { fontSize: 16, color: colors.primary, fontWeight: "600" },
-  title: { fontSize: 28, fontWeight: "700", color: colors.textPrimary, marginBottom: 6 },
-  subtitle: { fontSize: 14, color: colors.textMuted },
-  searchRow: { flexDirection: "row", gap: 10, marginBottom: 20 },
-  input: {
-    flex: 1, backgroundColor: colors.surface, borderRadius: 12,
-    padding: 14, fontSize: 16, color: colors.textPrimary,
+  safeArea: { flex: 1 },
+  flex: { flex: 1 },
+  header: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16,
   },
-  searchButton: {
+  backText: { fontSize: 15, fontWeight: "600", color: colors.primary, minWidth: 64 },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: "800", color: colors.textPrimary, textAlign: "center" },
+  headerSpacer: { minWidth: 64 },
+  content: { flex: 1, paddingHorizontal: 16, gap: 16 },
+  hint: { fontSize: 14, color: colors.textMuted },
+
+  searchRow: { flexDirection: "row", gap: 10 },
+  searchInput: {
+    flex: 1, backgroundColor: colors.surface, borderRadius: 14,
+    paddingHorizontal: 16, paddingVertical: 14,
+    fontSize: 16, color: colors.textPrimary,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  searchBtn: {
     backgroundColor: colors.primary, paddingHorizontal: 20,
-    borderRadius: 12, alignItems: "center", justifyContent: "center",
+    borderRadius: 14, alignItems: "center", justifyContent: "center",
+    shadowColor: colors.primary, shadowOpacity: 0.25, shadowOffset: { width: 0, height: 3 }, shadowRadius: 8,
   },
-  searchButtonDisabled: { opacity: 0.6 },
-  searchButtonText: { fontSize: 15, fontWeight: "600", color: "#000" },
-  resultsList: { gap: 10 },
+  searchBtnDisabled: { opacity: 0.6, shadowOpacity: 0 },
+  searchBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+
+  resultsList: { flex: 1 },
   resultCard: {
-    backgroundColor: colors.surface, borderRadius: 14, padding: 14,
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: colors.surface, borderRadius: 16, padding: 14,
+    flexDirection: "row", alignItems: "center",
+    borderWidth: 1, borderColor: colors.border,
+    shadowColor: "#000", shadowOpacity: 0.03, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6,
+    marginBottom: 8,
   },
-  resultInfo: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
-  avatar: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary,
-    alignItems: "center", justifyContent: "center",
+  avatarWrap: {
+    width: 44, height: 44, borderRadius: 14, backgroundColor: colors.primaryLight,
+    alignItems: "center", justifyContent: "center", marginRight: 12,
   },
-  avatarText: { fontSize: 18, fontWeight: "700", color: "#000" },
+  avatarImg: { width: 44, height: 44, borderRadius: 14 },
+  avatarText: { fontSize: 14, fontWeight: "800", color: colors.primaryDark },
+  resultBody: { flex: 1 },
   resultName: { fontSize: 16, fontWeight: "600", color: colors.textPrimary },
-  addButton: {
-    backgroundColor: colors.primary, paddingHorizontal: 18,
-    paddingVertical: 8, borderRadius: 10,
+  handleRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
+  platformLabel: { fontSize: 11, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase" },
+  handleText: { fontSize: 12, color: colors.textMuted },
+  addBtn: {
+    backgroundColor: colors.primary, paddingHorizontal: 18, paddingVertical: 9,
+    borderRadius: 12,
   },
-  addButtonText: { fontSize: 14, fontWeight: "600", color: "#000" },
+  addBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
   sentBadge: {
-    backgroundColor: colors.textMuted + "20", paddingHorizontal: 14,
-    paddingVertical: 8, borderRadius: 10,
+    backgroundColor: colors.primaryLight, paddingHorizontal: 14,
+    paddingVertical: 9, borderRadius: 12,
+    flexDirection: "row", alignItems: "center", gap: 4,
   },
-  sentBadgeText: { fontSize: 14, fontWeight: "600", color: colors.textMuted },
+  sentText: { fontSize: 13, fontWeight: "600", color: colors.primaryDark },
+
+  emptyBox: { alignItems: "center", paddingTop: 48, gap: 8 },
+  emptyIcon: { marginBottom: 12 },
+  emptyTitle: { fontSize: 17, fontWeight: "700", color: colors.textPrimary },
+  emptySub: { fontSize: 13, color: colors.textMuted, textAlign: "center" },
 });

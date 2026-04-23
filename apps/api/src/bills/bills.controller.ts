@@ -18,6 +18,7 @@ import { BillsService } from './bills.service';
 import { CreateBillDto } from './dto/create-bill.dto';
 import { UpdateSplitDto } from './dto/update-split.dto';
 import { SettleParticipantDto } from './dto/settle-participant.dto';
+import { RemindParticipantDto } from './dto/remind-participant.dto';
 import { UsersService } from '../users/users.service';
 
 @UseGuards(FirebaseAuthGuard)
@@ -30,8 +31,8 @@ export class BillsController {
 
     @Get()
     async findAll(@CurrentUser() caller: AuthenticatedUser) {
-        const user = await this.usersService.getProfile(caller.uid);
-        return this.billsService.listForUser(user.id);
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.billsService.listForUser(userId);
     }
 
     @Post()
@@ -47,8 +48,8 @@ export class BillsController {
         @CurrentUser() caller: AuthenticatedUser,
         @Param('id') id: string,
     ) {
-        const user = await this.usersService.getProfile(caller.uid);
-        return this.billsService.findOne(user.id, id);
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.billsService.findOne(userId, id);
     }
 
     @Post(':id/split')
@@ -57,8 +58,8 @@ export class BillsController {
         @Param('id') id: string,
         @Body() dto: UpdateSplitDto,
     ) {
-        const user = await this.usersService.getProfile(caller.uid);
-        return this.billsService.updateSplit(user.id, id, dto);
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.billsService.updateSplit(userId, id, dto);
     }
 
     @Post(':id/settle')
@@ -67,8 +68,19 @@ export class BillsController {
         @Param('id') id: string,
         @Body() dto: SettleParticipantDto,
     ) {
-        const user = await this.usersService.getProfile(caller.uid);
-        return this.billsService.settleParticipant(user.id, id, dto.participantId);
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.billsService.settleParticipant(userId, id, dto.participantId);
+    }
+
+    @Post(':id/remind')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    async remind(
+        @CurrentUser() caller: AuthenticatedUser,
+        @Param('id') id: string,
+        @Body() dto: RemindParticipantDto,
+    ) {
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.billsService.remindParticipant(userId, id, dto.participantId, dto.delayDays);
     }
 
     @Delete(':id')
@@ -77,7 +89,7 @@ export class BillsController {
         @CurrentUser() caller: AuthenticatedUser,
         @Param('id') id: string,
     ) {
-        const user = await this.usersService.getProfile(caller.uid);
-        return this.billsService.cancel(user.id, id);
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.billsService.cancel(userId, id);
     }
 }

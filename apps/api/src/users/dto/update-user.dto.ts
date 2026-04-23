@@ -5,7 +5,6 @@ import {
     IsEnum,
     IsOptional,
     IsString,
-    Matches,
     MaxLength,
     MinLength,
 } from 'class-validator';
@@ -34,4 +33,9 @@ export class UpdateUserDto {
     @IsEmail()
     @MaxLength(254)
     email?: string;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(512)
+    avatarKey?: string;
 }

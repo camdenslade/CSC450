@@ -45,7 +45,7 @@ export class AuthService implements OnModuleInit {
 
     // Verifies the Firebase ID token and returns the User record.
     // Creates the record on first login.
-    async exchangeToken(idToken: string): Promise<User> {
+    async exchangeToken(idToken: string): Promise<{ user: User; isNew: boolean }> {
         let decoded: DecodedIdToken;
 
         try {
@@ -57,14 +57,20 @@ export class AuthService implements OnModuleInit {
         }
 
         const existing = await this.users.findOne({ where: { authProviderUid: decoded.uid } });
-        if (existing) return existing;
+        if (existing) return { user: existing, isNew: existing.displayName === '' };
 
-        // First-time sign-in - create the user record
-        const user = this.users.create({
-            authProviderUid: decoded.uid,
-            displayName:     decoded.name ?? decoded.email ?? 'TabUp User',
-        });
-
-        return this.users.save(user);
+        // First-time sign-in — displayName set during onboarding, not here
+        try {
+            const user = this.users.create({
+                authProviderUid: decoded.uid,
+                displayName:     '',
+            });
+            return { user: await this.users.save(user), isNew: true };
+        } catch {
+            // Race condition: another request created the record between our check and insert
+            const race = await this.users.findOne({ where: { authProviderUid: decoded.uid } });
+            if (race) return { user: race, isNew: race.displayName === '' };
+            throw new UnauthorizedException('Failed to create user record.');
+        }
     }
 }

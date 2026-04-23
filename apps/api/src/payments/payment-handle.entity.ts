@@ -25,6 +25,7 @@ export class PaymentHandle extends BaseEntity {
     platform: Platform;
 
     // Stored without any prefix (@, $, etc.)
+    @Index()
     @Column({ length: 64 })
     handle: string;
 

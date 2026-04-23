@@ -1,95 +1,96 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { colors } from "../theme/colors";
+import { Fragment } from "react";
+import { Pressable, Text, View } from "react-native";
+import { Image } from "expo-image";
+import { Ionicons } from "@expo/vector-icons";
+import { useColors } from "../theme/colors";
+import { useAuth } from "../auth/AuthContext";
 
 export type TabKey = "Home" | "Friends" | "Tabs" | "Profile";
 
 type NavBarProps = {
   active?: TabKey;
   onTabPress?: (tab: TabKey) => void;
+  onCreateTab?: () => void;
 };
 
-const tabs: { key: TabKey; label: string }[] = [
-  { key: "Home", label: "Home" },
-  { key: "Friends", label: "Friends" },
-  { key: "Tabs", label: "Tabs" },
-  { key: "Profile", label: "Profile" },
+type TabConfig = { key: TabKey; label: string; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap };
+
+const TABS: TabConfig[] = [
+  { key: "Home",    label: "Home",    icon: "home-outline",   iconActive: "home" },
+  { key: "Friends", label: "Friends", icon: "people-outline", iconActive: "people" },
+  { key: "Tabs",    label: "Tabs",    icon: "list-outline",   iconActive: "list" },
+  { key: "Profile", label: "Profile", icon: "person-outline", iconActive: "person" },
 ];
 
-export function NavBar({ active = "Home", onTabPress }: NavBarProps) {
-  // Simple text-only tabs until icons/navigation are wired up
+export function NavBar({ active = "Home", onTabPress, onCreateTab }: NavBarProps) {
+  const { avatarUrl } = useAuth();
+  const c = useColors();
+
   return (
-    <View style={styles.container}>
-      {tabs.map((tab) => {
-        const isActive = tab.key === active;
-        return (
-          <Pressable
-            key={tab.key}
-            style={({ pressed }) => [
-              styles.item,
-              pressed && styles.itemPressed,
-              isActive && styles.itemActive,
-            ]}
-            onPress={() => onTabPress?.(tab.key)}
-          >
-            <View style={[styles.dot, isActive && styles.dotActive]} />
-            <Text style={[styles.label, isActive && styles.labelActive]}>
-              {tab.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+    <View style={{ paddingHorizontal: 16, paddingVertical: 4 }}>
+      <View style={{
+        flexDirection: "row", alignItems: "center",
+        backgroundColor: c.surface, borderRadius: 24,
+        paddingHorizontal: 8, paddingVertical: 8,
+        shadowColor: "#000", shadowOpacity: 0.08, shadowOffset: { width: 0, height: 4 },
+        shadowRadius: 16, elevation: 8,
+        borderWidth: 1, borderColor: c.border,
+      }}>
+        {TABS.map((tab, i) => {
+          const isActive = tab.key === active;
+          const showFab = i === 2;
+          return (
+            <Fragment key={tab.key}>
+              {showFab && (
+                <Pressable
+                  style={({ pressed }) => ({
+                    width: 52, height: 52, borderRadius: 26,
+                    backgroundColor: pressed ? c.primaryDark : c.primary,
+                    alignItems: "center", justifyContent: "center",
+                    shadowColor: c.primary, shadowOpacity: 0.4,
+                    shadowOffset: { width: 0, height: 4 }, shadowRadius: 12,
+                    elevation: 8, marginHorizontal: 4, marginBottom: 8,
+                  })}
+                  onPress={onCreateTab}
+                >
+                  <Ionicons name="add" size={28} color="#fff" />
+                </Pressable>
+              )}
+              <Pressable
+                style={({ pressed }) => ({
+                  flex: 1, alignItems: "center", paddingVertical: 4,
+                  borderRadius: 16, position: "relative",
+                  backgroundColor: pressed ? c.primaryLight : "transparent",
+                })}
+                onPress={() => onTabPress?.(tab.key)}
+              >
+                {tab.key === "Profile" && avatarUrl
+                  ? <Image source={{ uri: avatarUrl }} style={{
+                      width: 22, height: 22, borderRadius: 11, marginBottom: 2,
+                      borderWidth: 1.5, borderColor: isActive ? c.primary : c.border,
+                    }} />
+                  : <Ionicons
+                      name={isActive ? tab.iconActive : tab.icon}
+                      size={22}
+                      color={isActive ? c.primary : c.navMuted}
+                      style={{ marginBottom: 2 }}
+                    />
+                }
+                <Text style={{ fontSize: 11, fontWeight: "600", color: isActive ? c.textPrimary : c.navMuted }}>
+                  {tab.label}
+                </Text>
+                {isActive && (
+                  <View style={{
+                    position: "absolute", bottom: -2,
+                    width: 4, height: 4, borderRadius: 2,
+                    backgroundColor: c.primary,
+                  }} />
+                )}
+              </Pressable>
+            </Fragment>
+          );
+        })}
+      </View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: "row",
-    backgroundColor: colors.navSurface,
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 6,
-    shadowColor: "#000000",
-    shadowOpacity: 0.06,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 20,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: "#d7e0d9",
-    marginTop: 10,
-  },
-  item: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  itemPressed: {
-    backgroundColor: "#f0f3f0",
-  },
-  itemActive: {
-    backgroundColor: "#eef7f1",
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 6,
-    backgroundColor: colors.navMuted,
-    marginBottom: 6,
-    opacity: 0.4,
-  },
-  dotActive: {
-    backgroundColor: colors.primary,
-    opacity: 1,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.navMuted,
-  },
-  labelActive: {
-    color: colors.navText,
-  },
-});

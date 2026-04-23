@@ -88,6 +88,11 @@ export class CreateBillDto {
     @MaxLength(500)
     notes?: string;
 
+    @IsOptional()
+    @IsString()
+    @MaxLength(512)
+    receiptKey?: string;
+
     @IsArray()
     @ValidateNested({ each: true })
     @Type(() => ParticipantDto)

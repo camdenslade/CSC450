@@ -1,98 +1,125 @@
-// apps/mobile/src/home/components/ActivityList.tsx
-import { View, Text, StyleSheet } from "react-native";
-import { colors } from "../../theme/colors";
+import { useEffect, useRef } from "react";
+import { View, Text, StyleSheet, Animated } from "react-native";
+import { useColors } from "../../theme/colors";
 
 export type ActivityItem = {
   title: string;
   detail: string;
   time: string;
-  tone: "success" | "info" | "muted";
+  tone: "success" | "info" | "muted" | "danger";
   amount?: string;
 };
 
-// Feed of recent activity items
-export function ActivityList({ items }: { items: ActivityItem[] }) {
-  return (
-    <>
-      {items.map((item) => {
-        const toneStyle =
-          item.tone === "success"
-            ? styles.activityDotSuccess
-            : item.tone === "info"
-            ? styles.activityDotInfo
-            : styles.activityDotMuted;
+const TONE_ICONS: Record<ActivityItem["tone"], string> = {
+  success: "✓",
+  info: "↑",
+  danger: "↓",
+  muted: "·",
+};
 
-        return (
-          <View key={item.title} style={styles.activityRow}>
-            <View style={[styles.activityDot, toneStyle]} />
-            <View style={styles.activityCopy}>
-              <Text style={styles.activityTitle}>{item.title}</Text>
-              <Text style={styles.activityDetail}>{item.detail}</Text>
-            </View>
-            <View style={styles.activityMeta}>
-              {item.amount ? (
-                <Text style={styles.activityAmount}>{item.amount}</Text>
-              ) : null}
-              <Text style={styles.activityTime}>{item.time}</Text>
-            </View>
-          </View>
-        );
-      })}
-    </>
+function ActivityRow({ item, index, c, bubbleColor, iconColor, amountColor }: {
+  item: ActivityItem;
+  index: number;
+  c: ReturnType<typeof useColors>;
+  bubbleColor: Record<ActivityItem["tone"], string>;
+  iconColor: Record<ActivityItem["tone"], string>;
+  amountColor: (tone: ActivityItem["tone"]) => string;
+}) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(10)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 220, delay: index * 55, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 220, delay: index * 55, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  return (
+    <Animated.View style={{ opacity, transform: [{ translateY }] }}>
+      <View style={[styles.row, index > 0 && { borderTopWidth: 1, borderTopColor: c.divider }]}>
+        <View style={[styles.iconBubble, { backgroundColor: bubbleColor[item.tone] }]}>
+          <Text style={[styles.iconText, { color: iconColor[item.tone] }]}>
+            {TONE_ICONS[item.tone]}
+          </Text>
+        </View>
+        <View style={styles.copy}>
+          <Text style={[styles.title, { color: c.textPrimary }]}>{item.title}</Text>
+          <Text style={[styles.detail, { color: c.textMuted }]}>{item.detail}</Text>
+        </View>
+        <View style={styles.meta}>
+          {item.amount && (
+            <Text style={[styles.amount, { color: amountColor(item.tone) }]}>
+              {item.amount}
+            </Text>
+          )}
+          <Text style={[styles.time, { color: c.textMuted }]}>{item.time}</Text>
+        </View>
+      </View>
+    </Animated.View>
+  );
+}
+
+export function ActivityList({ items }: { items: ActivityItem[] }) {
+  const c = useColors();
+  const bubbleColor: Record<ActivityItem["tone"], string> = {
+    success: c.primaryLight,
+    info: "#eff6ff",
+    danger: "#fef2f2",
+    muted: c.surfaceSecondary,
+  };
+  const iconColor: Record<ActivityItem["tone"], string> = {
+    success: c.success,
+    info: "#3b82f6",
+    danger: c.danger,
+    muted: c.textMuted,
+  };
+  const amountColor = (tone: ActivityItem["tone"]) =>
+    tone === "success" ? c.amountPositive : tone === "danger" ? c.amountNegative : c.textSecondary;
+
+  return (
+    <View style={[styles.container, { backgroundColor: c.surface, borderColor: c.border }]}>
+      {items.map((item, i) => (
+        <ActivityRow
+          key={i}
+          item={item}
+          index={i}
+          c={c}
+          bubbleColor={bubbleColor}
+          iconColor={iconColor}
+          amountColor={amountColor}
+        />
+      ))}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  activityRow: {
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
+  container: {
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.textMuted,
+    overflow: "hidden",
+    marginTop: 10,
+  },
+  row: {
     flexDirection: "row",
     alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 14,
   },
-  activityDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 6,
-  },
-  activityDotSuccess: {
-    backgroundColor: colors.primary,
-  },
-  activityDotInfo: {
-    backgroundColor: colors.textSecondary,
-  },
-  activityDotMuted: {
-    backgroundColor: colors.textMuted,
-  },
-  activityCopy: {
-    flex: 1,
-    marginLeft: 10,
-  },
-  activityTitle: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  activityDetail: {
-    marginTop: 4,
-    color: colors.textMuted,
-    fontSize: 12,
-  },
-  activityMeta: {
-    alignItems: "flex-end",
+  iconBubble: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
     justifyContent: "center",
+    marginRight: 12,
   },
-  activityAmount: {
-    color: colors.textPrimary,
-    fontWeight: "700",
-    fontSize: 13,
-  },
-  activityTime: {
-    marginTop: 4,
-    color: colors.textMuted,
-    fontSize: 11,
-  },
+  iconText: { fontSize: 14, fontWeight: "700" },
+  copy: { flex: 1 },
+  title: { fontSize: 14, fontWeight: "600" },
+  detail: { fontSize: 12, marginTop: 2 },
+  meta: { alignItems: "flex-end" },
+  amount: { fontSize: 14, fontWeight: "700" },
+  time: { fontSize: 11, marginTop: 2 },
 });

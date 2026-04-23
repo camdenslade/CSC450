@@ -1,6 +1,5 @@
-// apps/mobile/src/home/components/NextTabCard.tsx
 import { View, Text, StyleSheet, Pressable } from "react-native";
-import { colors } from "../../theme/colors";
+import { useColors } from "../../theme/colors";
 
 export type NextTab = {
   name: string;
@@ -11,104 +10,51 @@ export type NextTab = {
   status: string;
 };
 
-// Preview of the upcoming tab
 export function NextTabCard({ tab, onPress }: { tab: NextTab; onPress?: () => void }) {
+  const c = useColors();
   return (
-    <Pressable style={styles.nextTabCard} onPress={onPress}>
-      <View style={styles.nextTabTop}>
-        <View style={styles.dateBadge}>
-          <Text style={styles.dateBadgeText}>Fri</Text>
+    <Pressable
+      style={({ pressed }) => [styles.card, { backgroundColor: pressed ? c.surfaceSecondary : c.surface, borderColor: c.border }]}
+      onPress={onPress}
+    >
+      <View style={styles.top}>
+        <View style={styles.info}>
+          <Text style={[styles.name, { color: c.textPrimary }]}>{tab.name}</Text>
+          {tab.location ? <Text style={[styles.meta, { color: c.textMuted }]}>{tab.location} · {tab.time}</Text> : null}
         </View>
-        <View style={styles.tabCopy}>
-          <Text style={styles.tabName}>{tab.name}</Text>
-          <Text style={styles.tabMeta}>
-            {tab.location} | {tab.time}
-          </Text>
-        </View>
-        <Text style={styles.tabEstimate}>{tab.estimate}</Text>
+        <Text style={[styles.amount, { color: c.textPrimary }]}>{tab.estimate}</Text>
       </View>
 
-      <View style={styles.avatarRow}>
-        {tab.guests.map((guest) => (
-          <View key={guest} style={styles.avatar}>
-            <Text style={styles.avatarText}>{guest}</Text>
-          </View>
-        ))}
-        <Text style={styles.tabStatus}>{tab.status}</Text>
+      <View style={styles.footer}>
+        <View style={styles.avatars}>
+          {tab.guests.map((g, i) => (
+            <View key={i} style={[styles.avatar, { marginLeft: i > 0 ? -8 : 0, backgroundColor: c.primaryLight, borderColor: c.surface }]}>
+              <Text style={[styles.avatarText, { color: c.primaryDark }]}>{g}</Text>
+            </View>
+          ))}
+        </View>
+        <View style={[styles.statusPill, { backgroundColor: c.warning + "20" }]}>
+          <Text style={[styles.statusText, { color: c.warning }]}>{tab.status}</Text>
+        </View>
       </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  nextTabCard: {
-    marginTop: 12,
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: colors.textMuted,
+  card: {
+    borderRadius: 16, padding: 16, borderWidth: 1,
+    shadowColor: "#000", shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 2,
   },
-  nextTabTop: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  dateBadge: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  dateBadgeText: {
-    fontWeight: "800",
-    color: "#000",
-    fontSize: 14,
-  },
-  tabCopy: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  tabName: {
-    color: colors.textPrimary,
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  tabMeta: {
-    marginTop: 4,
-    color: colors.textMuted,
-    fontSize: 12,
-  },
-  tabEstimate: {
-    marginLeft: 8,
-    color: colors.textPrimary,
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  avatarRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 14,
-    gap: 8,
-  },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    backgroundColor: colors.primarySoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: {
-    fontWeight: "700",
-    color: "#0f2c1c",
-    fontSize: 12,
-  },
-  tabStatus: {
-    marginLeft: 6,
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
-  },
+  top: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 },
+  info: { flex: 1, marginRight: 12 },
+  name: { fontSize: 16, fontWeight: "700" },
+  meta: { fontSize: 13, marginTop: 3 },
+  amount: { fontSize: 18, fontWeight: "800" },
+  footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  avatars: { flexDirection: "row", alignItems: "center" },
+  avatar: { width: 30, height: 30, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 2 },
+  avatarText: { fontSize: 10, fontWeight: "700" },
+  statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  statusText: { fontSize: 12, fontWeight: "600" },
 });

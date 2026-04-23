@@ -11,6 +11,9 @@ export interface ApiUser {
   id: string;
   displayName: string;
   defaultPlatform: "paypal" | "venmo" | "cashapp" | null;
+  phone?: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
 }
 
 export interface ApiBillParticipant {
@@ -37,6 +40,7 @@ export interface ApiBill {
   status: "open" | "settled" | "cancelled";
   createdAt: string;
   participants: ApiBillParticipant[];
+  receiptUrl: string | null;
 }
 
 export interface ApiFriend {

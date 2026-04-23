@@ -1,11 +1,12 @@
 // apps/api/src/groups/groups.service.ts
 
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Group } from './group.entity';
 import { GroupMember } from './group-member.entity';
 import { CreateGroupDto } from './dto/create-group.dto';
+import { UpdateGroupDto } from './dto/update-group.dto';
 
 @Injectable()
 export class GroupsService {
@@ -26,8 +27,6 @@ export class GroupsService {
             .map((m) => m.group)
             .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }
-
-    // ---------------------------------------------------------
 
     // Creator is always added as a member regardless of memberIds.
     async create(ownerDbId: string, dto: CreateGroupDto): Promise<Group> {
@@ -56,5 +55,43 @@ export class GroupsService {
         if (!group.members.some((m) => m.userId === callerDbId)) throw new ForbiddenException();
 
         return group;
+    }
+
+    async update(callerDbId: string, groupId: string, dto: UpdateGroupDto): Promise<Group> {
+        const group = await this.findOne(callerDbId, groupId);
+        if (group.ownerId !== callerDbId) throw new ForbiddenException('Only the owner can rename the group.');
+        group.name = dto.name;
+        await this.groups.save(group);
+        return this.findOne(callerDbId, groupId);
+    }
+
+    async addMember(callerDbId: string, groupId: string, targetUserId: string): Promise<Group> {
+        const group = await this.findOne(callerDbId, groupId);
+        if (group.ownerId !== callerDbId) throw new ForbiddenException('Only the owner can add members.');
+        if (group.members.some((m) => m.userId === targetUserId)) {
+            throw new BadRequestException('User is already a member of this group.');
+        }
+        await this.members.save(this.members.create({ groupId, userId: targetUserId }));
+        return this.findOne(callerDbId, groupId);
+    }
+
+    async removeMember(callerDbId: string, groupId: string, targetUserId: string): Promise<Group> {
+        const group = await this.findOne(callerDbId, groupId);
+        if (group.ownerId !== callerDbId && callerDbId !== targetUserId) {
+            throw new ForbiddenException('Only the owner can remove other members.');
+        }
+        if (targetUserId === group.ownerId) {
+            throw new BadRequestException('The owner cannot be removed. Transfer ownership or delete the group.');
+        }
+        const membership = await this.members.findOne({ where: { groupId, userId: targetUserId } });
+        if (!membership) throw new NotFoundException('Member not found in this group.');
+        await this.members.remove(membership);
+        return this.findOne(callerDbId, groupId);
+    }
+
+    async deleteGroup(callerDbId: string, groupId: string): Promise<void> {
+        const group = await this.findOne(callerDbId, groupId);
+        if (group.ownerId !== callerDbId) throw new ForbiddenException('Only the owner can delete the group.');
+        await this.groups.remove(group);
     }
 }

@@ -1,30 +1,25 @@
-// apps/mobile/src/home/components/Section.tsx
+import { ReactNode } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
-import { colors } from "../../theme/colors";
+import { useColors } from "../../theme/colors";
 
 type SectionProps = {
   title: string;
   actionLabel?: string;
   onActionPress?: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 };
 
-// Standard section wrapper with optional action link
-export function Section({
-  title,
-  actionLabel,
-  onActionPress,
-  children,
-}: SectionProps) {
+export function Section({ title, actionLabel, onActionPress, children }: SectionProps) {
+  const c = useColors();
   return (
     <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{title}</Text>
-        {actionLabel ? (
-          <Pressable onPress={onActionPress} hitSlop={8}>
-            <Text style={styles.sectionAction}>{actionLabel}</Text>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: c.textPrimary }]}>{title}</Text>
+        {actionLabel && (
+          <Pressable onPress={onActionPress} hitSlop={10}>
+            <Text style={[styles.action, { color: c.primary }]}>{actionLabel} →</Text>
           </Pressable>
-        ) : null}
+        )}
       </View>
       {children}
     </View>
@@ -33,21 +28,20 @@ export function Section({
 
 const styles = StyleSheet.create({
   section: {
-    marginTop: 22,
+    marginTop: 28,
   },
-  sectionHeader: {
+  header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginBottom: 10,
   },
-  sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: 18,
+  title: {
+    fontSize: 17,
     fontWeight: "700",
   },
-  sectionAction: {
-    color: colors.textMuted,
-    fontSize: 12,
+  action: {
+    fontSize: 13,
     fontWeight: "600",
   },
 });

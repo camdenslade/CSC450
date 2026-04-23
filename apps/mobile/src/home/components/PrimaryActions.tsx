@@ -1,55 +1,71 @@
-// app/mobile/src/home/components/PrimaryActions.tsx
-import { View, Text, StyleSheet, Pressable } from "react-native";
-import { colors } from "../../theme/colors";
+import { View, Text, StyleSheet } from "react-native";
+import { useColors } from "../../theme/colors";
+import { AnimatedPressable } from "../../shared/AnimatedPressable";
 
 type PrimaryActionsProps = {
-    onCreateTab?: () => void;
-    onViewTabs?: () => void;
+  onCreateTab?: () => void;
+  onViewTabs?: () => void;
 };
 
 export function PrimaryActions({ onCreateTab, onViewTabs }: PrimaryActionsProps) {
-    return (
-        <View style={styles.container}>
-            {/* These serve as our main two buttons on the home screen */}
-            <Pressable style={[styles.button, styles.primary]} onPress={onCreateTab}>
-                <Text style={styles.primaryText}>Start New Tab</Text>
-            </Pressable>
+  const c = useColors();
+  return (
+    <View style={styles.container}>
+      <View style={styles.primaryWrap}>
+        <AnimatedPressable
+          style={[styles.primary, { backgroundColor: c.primary, shadowColor: c.primary }]}
+          onPress={onCreateTab}
+          scaleTo={0.97}
+        >
+          <Text style={styles.primaryIcon}>+</Text>
+          <Text style={styles.primaryText}>New Tab</Text>
+        </AnimatedPressable>
+      </View>
 
-            <Pressable style={[styles.button, styles.secondary]} onPress={onViewTabs}>
-                <Text style={styles.secondaryText}>View Existing Tabs</Text>
-            </Pressable>
-        </View>
-    );
+      <View style={styles.secondaryWrap}>
+        <AnimatedPressable
+          style={[styles.secondary, { backgroundColor: c.surface, borderColor: c.border }]}
+          onPress={onViewTabs}
+          scaleTo={0.97}
+        >
+          <Text style={[styles.secondaryText, { color: c.textSecondary }]}>View Tabs</Text>
+        </AnimatedPressable>
+      </View>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: 16,
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
+    marginTop: 16,
+    paddingHorizontal: 16,
   },
-  button: {
+  primaryWrap: { flex: 2 },
+  secondaryWrap: { flex: 1 },
+  primary: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 14,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: 16,
+    gap: 6,
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 4,
   },
-  primary: {
-    backgroundColor: colors.primary,
-  },
+  primaryIcon: { fontSize: 20, color: "#fff", fontWeight: "300", lineHeight: 22 },
+  primaryText: { fontSize: 15, fontWeight: "700", color: "#fff" },
   secondary: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.textMuted,
   },
-  primaryText: {
-    color: "#000",
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  secondaryText: {
-    color: colors.textSecondary,
-    fontWeight: "500",
-    fontSize: 15,
-  },
+  secondaryText: { fontSize: 14, fontWeight: "600" },
 });

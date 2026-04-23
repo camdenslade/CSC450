@@ -30,14 +30,14 @@ export class FriendsController {
 
     @Get()
     async listFriends(@CurrentUser() caller: AuthenticatedUser) {
-        const user = await this.usersService.getProfile(caller.uid);
-        return this.friendsService.listFriends(user.id);
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.friendsService.listFriends(userId);
     }
 
     @Get('requests')
     async listRequests(@CurrentUser() caller: AuthenticatedUser) {
-        const user = await this.usersService.getProfile(caller.uid);
-        return this.friendsService.listRequests(user.id);
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.friendsService.listRequests(userId);
     }
 
     /** Send a friend request by target user DB ID (after a name search). */
@@ -62,8 +62,8 @@ export class FriendsController {
         @CurrentUser() caller: AuthenticatedUser,
         @Body() dto: AcceptFriendDto,
     ) {
-        const user = await this.usersService.getProfile(caller.uid);
-        return this.friendsService.accept(user.id, dto.friendId);
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.friendsService.accept(userId, dto.friendId);
     }
 
     @Delete(':id')
@@ -72,7 +72,7 @@ export class FriendsController {
         @CurrentUser() caller: AuthenticatedUser,
         @Param('id') id: string,
     ) {
-        const user = await this.usersService.getProfile(caller.uid);
-        return this.friendsService.remove(user.id, id);
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.friendsService.remove(userId, id);
     }
 }

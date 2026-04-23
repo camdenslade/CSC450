@@ -16,6 +16,7 @@ export class User extends BaseEntity {
     @Column({ name: 'auth_provider_uid', length: 128 })
     authProviderUid: string;
 
+    @Index()
     @Column({ name: 'display_name', length: 80 })
     displayName: string;
 
