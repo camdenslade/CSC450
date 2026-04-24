@@ -70,7 +70,7 @@ export class BillsService {
         const ownerHandles = await this.paymentsService.listHandles(owner.id);
         const handleByPlatform = new Map(ownerHandles.map((h) => [h.platform, h]));
 
-        return this.dataSource.transaction(async (em) => {
+        const result = await this.dataSource.transaction(async (em) => {
             const bill = em.create(Bill, {
                 ownerId:      owner.id,
                 name:         dto.name,
