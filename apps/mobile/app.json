@@ -2,6 +2,7 @@
   "expo": {
     "name": "TabUp",
     "slug": "TabUp",
+    "scheme": "tabup",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

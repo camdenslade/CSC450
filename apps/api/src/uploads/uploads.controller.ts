@@ -1,6 +1,7 @@
 // apps/api/src/uploads/uploads.controller.ts
 
 import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { FirebaseAuthGuard } from '../common/guards/firebase-auth.guard';
 import { UploadsService } from './uploads.service';
 import { PresignDto } from './dto/presign.dto';
@@ -18,6 +19,7 @@ export class UploadsController {
     /** POST /v1/uploads/ocr — body: { image: "<base64 jpeg>" } */
     @Post('ocr')
     @HttpCode(HttpStatus.OK)
+    @Throttle({ default: { ttl: 60_000, limit: 5 } })
     ocrBill(@Body() body: { image: string }) {
         return this.uploadsService.ocrBillTotal(body.image);
     }

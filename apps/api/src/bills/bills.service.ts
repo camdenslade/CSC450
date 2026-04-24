@@ -135,6 +135,22 @@ export class BillsService {
 
             return savedBill;
         });
+
+        // Notify registered participants (fire-and-forget after transaction)
+        const participantUserIds = dto.participants
+            .filter((p) => p.userId && p.userId !== owner.id)
+            .map((p) => p.userId!);
+
+        if (participantUserIds.length > 0) {
+            this.notifications.sendToUsers(
+                participantUserIds,
+                `You've been added to "${dto.name}"`,
+                `${owner.displayName} split a tab with you. Tap to review your share.`,
+                { type: 'tab_added', billId: result.id },
+            ).catch(() => {});
+        }
+
+        return result;
     }
 
     /** @returns All bills where the caller is owner or participant, newest first. */
@@ -235,6 +251,28 @@ export class BillsService {
         }
 
         return this.findOne(callerDbId, billId);
+    }
+
+    // Participant marks themselves as having paid — notifies the owner to confirm.
+    async selfSettle(callerDbId: string, billId: string): Promise<void> {
+        const bill = await this.bills.findOne({
+            where: { id: billId },
+            relations: ['participants', 'participants.user'],
+        });
+        if (!bill) throw new NotFoundException('Bill not found.');
+
+        const participant = bill.participants.find((p) => p.userId === callerDbId);
+        if (!participant) throw new ForbiddenException('You are not a participant on this bill.');
+        if (participant.state === ParticipantState.PAID) throw new BadRequestException('Already marked as paid.');
+
+        // Notify the owner
+        const callerName = participant.user?.displayName ?? 'Someone';
+        await this.notifications.sendToUsers(
+            [bill.ownerId],
+            `${callerName} says they paid`,
+            `Confirm payment on "${bill.name}" to settle their share.`,
+            { type: 'self_settle', billId, participantId: participant.id },
+        );
     }
 
     // Owner-only. Sends a push reminder immediately, or schedules one for delayDays from now.

@@ -72,6 +72,16 @@ export class BillsController {
         return this.billsService.settleParticipant(userId, id, dto.participantId);
     }
 
+    @Post(':id/self-settle')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    async selfSettle(
+        @CurrentUser() caller: AuthenticatedUser,
+        @Param('id') id: string,
+    ) {
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.billsService.selfSettle(userId, id);
+    }
+
     @Post(':id/remind')
     @HttpCode(HttpStatus.NO_CONTENT)
     async remind(

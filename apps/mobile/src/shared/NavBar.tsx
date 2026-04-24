@@ -11,6 +11,7 @@ type NavBarProps = {
   active?: TabKey;
   onTabPress?: (tab: TabKey) => void;
   onCreateTab?: () => void;
+  tabsBadge?: number;
 };
 
 type TabConfig = { key: TabKey; label: string; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap };
@@ -22,7 +23,7 @@ const TABS: TabConfig[] = [
   { key: "Profile", label: "Profile", icon: "person-outline", iconActive: "person" },
 ];
 
-export function NavBar({ active = "Home", onTabPress, onCreateTab }: NavBarProps) {
+export function NavBar({ active = "Home", onTabPress, onCreateTab, tabsBadge }: NavBarProps) {
   const { avatarUrl } = useAuth();
   const c = useColors();
 
@@ -69,12 +70,28 @@ export function NavBar({ active = "Home", onTabPress, onCreateTab }: NavBarProps
                       width: 22, height: 22, borderRadius: 11, marginBottom: 2,
                       borderWidth: 1.5, borderColor: isActive ? c.primary : c.border,
                     }} />
-                  : <Ionicons
-                      name={isActive ? tab.iconActive : tab.icon}
-                      size={22}
-                      color={isActive ? c.primary : c.navMuted}
-                      style={{ marginBottom: 2 }}
-                    />
+                  : (
+                    <View style={{ position: "relative" }}>
+                      <Ionicons
+                        name={isActive ? tab.iconActive : tab.icon}
+                        size={22}
+                        color={isActive ? c.primary : c.navMuted}
+                        style={{ marginBottom: 2 }}
+                      />
+                      {tab.key === "Tabs" && !!tabsBadge && (
+                        <View style={{
+                          position: "absolute", top: -3, right: -6,
+                          backgroundColor: "#EF4444", borderRadius: 8,
+                          minWidth: 16, height: 16, paddingHorizontal: 3,
+                          alignItems: "center", justifyContent: "center",
+                        }}>
+                          <Text style={{ color: "#fff", fontSize: 10, fontWeight: "800" }}>
+                            {tabsBadge > 9 ? "9+" : tabsBadge}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  )
                 }
                 <Text style={{ fontSize: 11, fontWeight: "600", color: isActive ? c.textPrimary : c.navMuted }}>
                   {tab.label}

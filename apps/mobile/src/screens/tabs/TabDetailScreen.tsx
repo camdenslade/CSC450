@@ -1,14 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
   Alert, ActivityIndicator, Linking, TextInput, Modal,
+  Animated, Clipboard,
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
 import { colors } from "../../theme/colors";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiBill, ApiBillParticipant } from "../../api/client";
+import { avatarColor } from "../../shared/avatarColor";
+import { Toast } from "../../shared/Toast";
+import { SwipeToSettle } from "../../shared/SwipeToSettle";
 
 type TabDetailScreenProps = {
   tabId: string;
@@ -34,6 +39,24 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
   const [splitAmounts, setSplitAmounts] = useState<Record<string, string>>({});
   const [savingSplits, setSavingSplits] = useState(false);
   const [remindTarget, setRemindTarget] = useState<ApiBillParticipant | null>(null);
+  const [toastMsg, setToastMsg] = useState("");
+  const [toastVisible, setToastVisible] = useState(false);
+  const celebrateAnim = useRef(new Animated.Value(0)).current;
+
+  function showToast(msg: string) {
+    setToastMsg(msg);
+    setToastVisible(false);
+    setTimeout(() => setToastVisible(true), 10);
+  }
+
+  function celebrate() {
+    celebrateAnim.setValue(0);
+    Animated.spring(celebrateAnim, {
+      toValue: 1, useNativeDriver: true,
+      damping: 8, stiffness: 120, mass: 0.8,
+    }).start();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
 
   function loadBill() {
     apiClient.get<ApiBill>(`/tabs/${tabId}`)
@@ -51,11 +74,17 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
 
   function handleSettle(participant: ApiBillParticipant) {
     const name = participant.user?.displayName ?? participant.contactName ?? "this person";
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert("Mark as Paid", `Mark ${name} as paid?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Mark Paid", onPress: async () => {
-          try { await apiClient.post(`/tabs/${tabId}/settle`, { participantId: participant.id }); loadBill(); }
+          try {
+            await apiClient.post(`/tabs/${tabId}/settle`, { participantId: participant.id });
+            const refreshed = await apiClient.get<ApiBill>(`/tabs/${tabId}`);
+            setBill(refreshed);
+            if (refreshed.status === "settled") celebrate();
+          }
           catch (e: unknown) { Alert.alert("Error", e instanceof Error ? e.message : "Failed."); }
         },
       },
@@ -63,6 +92,7 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
   }
 
   function handleRequestPayment(participant: ApiBillParticipant) {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (participant.paymentLink) {
       Linking.openURL(participant.paymentLink).catch(() => Alert.alert("Error", "Could not open payment app."));
       return;
@@ -117,6 +147,29 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
     }
   }
 
+  async function handleSelfSettle() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert("Mark yourself as paid?", "The tab owner will get a notification to confirm.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "I paid", onPress: async () => {
+          try {
+            await apiClient.post(`/tabs/${tabId}/self-settle`);
+            showToast("Owner notified!");
+          } catch (e: unknown) {
+            Alert.alert("Error", e instanceof Error ? e.message : "Failed.");
+          }
+        },
+      },
+    ]);
+  }
+
+  function handleCopyLink(link: string) {
+    Clipboard.setString(link);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    showToast("Copied!");
+  }
+
   function handleCancelTab() {
     Alert.alert("Cancel Tab", "Are you sure you want to cancel this tab?", [
       { text: "No", style: "cancel" },
@@ -150,12 +203,26 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
 
   const isOwner = bill.ownerId === userId;
   const isOpen = bill.status === "open";
+  const myParticipant = bill.participants.find((p) => p.userId === userId && !isOwner);
   const pending = bill.participants.filter((p) => p.state !== "paid" && p.userId !== userId);
-  const settled = bill.participants.filter((p) => p.state === "paid" || p.userId === userId);
+  const settled = bill.participants.filter((p) => p.state === "paid" && p.userId !== userId);
   const collected = bill.participants.filter((p) => p.state === "paid").reduce((s, p) => s + p.paidCents, 0);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
+      <Toast message={toastMsg} visible={toastVisible} />
+
+      {/* Settle celebration */}
+      {bill?.status === "settled" && (
+        <Animated.View pointerEvents="none" style={[
+          StyleSheet.absoluteFillObject, styles.celebrationOverlay,
+          { opacity: celebrateAnim, transform: [{ scale: celebrateAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.8, 1.05, 1] }) }] },
+        ]}>
+          <Ionicons name="checkmark-circle" size={80} color={colors.primary} />
+          <Text style={styles.celebrationText}>All paid!</Text>
+        </Animated.View>
+      )}
+
       {/* Remind picker modal */}
       <Modal visible={!!remindTarget} transparent animationType="fade">
         <Pressable style={styles.remindBackdrop} onPress={() => setRemindTarget(null)}>
@@ -265,11 +332,14 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
                 </View>
               )}
             </View>
-            {bill.participants.map((p, i) => (
+            {bill.participants.map((p, i) => {
+              const name = p.user?.displayName ?? p.contactName ?? "?";
+              const ac = avatarColor(name);
+              return (
               <View key={p.id} style={[styles.splitRow, i > 0 && styles.rowBorder]}>
-                <View style={styles.participantAvatar}>
-                  <Text style={styles.participantAvatarText}>
-                    {initials(p.user?.displayName ?? p.contactName ?? "?")}
+                <View style={[styles.participantAvatar, { backgroundColor: ac.bg }]}>
+                  <Text style={[styles.participantAvatarText, { color: ac.text }]}>
+                    {initials(name)}
                   </Text>
                 </View>
                 <Text style={styles.splitName}>{p.user?.displayName ?? p.contactName ?? "?"}</Text>
@@ -288,7 +358,35 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
                   <Text style={styles.splitAmount}>${(p.shareCents / 100).toFixed(2)}</Text>
                 )}
               </View>
-            ))}
+              );
+            })}
+          </View>
+        )}
+
+        {/* "I paid" card for non-owner participant */}
+        {myParticipant && myParticipant.state !== "paid" && isOpen && (
+          <View style={[styles.card, { borderColor: colors.primary + "40" }]}>
+            <Text style={styles.cardTitle}>Your Share</Text>
+            <View style={styles.participantRow}>
+              {(() => { const ac = avatarColor(myParticipant.user?.displayName ?? myParticipant.contactName ?? "?"); return (
+                <View style={[styles.participantAvatar, { backgroundColor: ac.bg }]}>
+                  <Text style={[styles.participantAvatarText, { color: ac.text }]}>
+                    {initials(myParticipant.user?.displayName ?? myParticipant.contactName ?? "?")}
+                  </Text>
+                </View>
+              ); })()}
+              <View style={styles.participantInfo}>
+                <Text style={styles.participantName}>{myParticipant.user?.displayName ?? myParticipant.contactName ?? "You"}</Text>
+                <Text style={styles.participantMeta}>{myParticipant.state === "pending" ? "Pending" : "Requested"}</Text>
+              </View>
+              <View style={styles.participantRight}>
+                <Text style={styles.participantAmount}>${(myParticipant.shareCents / 100).toFixed(2)}</Text>
+                <Pressable style={styles.settleBtn} onPress={handleSelfSettle}>
+                  <Ionicons name="checkmark" size={14} color="#fff" />
+                  <Text style={styles.settleBtnText}>I paid</Text>
+                </Pressable>
+              </View>
+            </View>
           </View>
         )}
 
@@ -296,15 +394,19 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
         {pending.length > 0 && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Awaiting Payment</Text>
-            {pending.map((p, i) => (
-              <View key={p.id} style={[styles.participantRow, i > 0 && styles.rowBorder]}>
-                <View style={styles.participantAvatar}>
-                  <Text style={styles.participantAvatarText}>
-                    {initials(p.user?.displayName ?? p.contactName ?? "?")}
+            {pending.map((p, i) => {
+              const name = p.user?.displayName ?? p.contactName ?? "?";
+              const ac = avatarColor(name);
+              return (
+              <SwipeToSettle key={p.id} onSettle={() => handleSettle(p)} enabled={isOwner && isOpen}>
+              <View style={[styles.participantRow, i > 0 && styles.rowBorder]}>
+                <View style={[styles.participantAvatar, { backgroundColor: ac.bg }]}>
+                  <Text style={[styles.participantAvatarText, { color: ac.text }]}>
+                    {initials(name)}
                   </Text>
                 </View>
                 <View style={styles.participantInfo}>
-                  <Text style={styles.participantName}>{p.user?.displayName ?? p.contactName ?? "Unknown"}</Text>
+                  <Text style={styles.participantName}>{name === "?" ? "Unknown" : name}</Text>
                   <Text style={styles.participantMeta}>{PLATFORM_LABELS[p.platform]} · {p.state}</Text>
                 </View>
                 <View style={styles.participantRight}>
@@ -317,7 +419,12 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
                           <Text style={styles.remindBtnText}>Remind</Text>
                         </Pressable>
                       )}
-                      <Pressable style={styles.requestBtn} onPress={() => handleRequestPayment(p)}>
+                      <Pressable
+                        style={styles.requestBtn}
+                        onPress={() => handleRequestPayment(p)}
+                        onLongPress={() => p.paymentLink && handleCopyLink(p.paymentLink)}
+                        delayLongPress={400}
+                      >
                         <Text style={styles.requestBtnText}>Request</Text>
                       </Pressable>
                       <Pressable style={styles.settleBtn} onPress={() => handleSettle(p)}>
@@ -328,7 +435,9 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
                   )}
                 </View>
               </View>
-            ))}
+              </SwipeToSettle>
+              );
+            })}
           </View>
         )}
 
@@ -336,17 +445,21 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
         {settled.length > 0 && (
           <View style={[styles.card, styles.cardMuted]}>
             <Text style={styles.cardTitle}>Settled</Text>
-            {settled.map((p, i) => (
+            {settled.map((p, i) => {
+              const name = p.user?.displayName ?? p.contactName ?? "?";
+              const ac = avatarColor(name);
+              return (
               <View key={p.id} style={[styles.participantRow, i > 0 && styles.rowBorder, styles.rowMuted]}>
-                <View style={[styles.participantAvatar, styles.avatarMuted]}>
-                  <Text style={styles.participantAvatarText}>
-                    {initials(p.user?.displayName ?? p.contactName ?? "?")}
+                <View style={[styles.participantAvatar, { backgroundColor: ac.bg + "80" }]}>
+                  <Text style={[styles.participantAvatarText, { color: ac.text + "99" }]}>
+                    {initials(name)}
                   </Text>
                 </View>
-                <Text style={[styles.participantName, styles.textMuted]}>{p.user?.displayName ?? p.contactName ?? "Unknown"}</Text>
+                <Text style={[styles.participantName, styles.textMuted]}>{name === "?" ? "Unknown" : name}</Text>
                 <Text style={[styles.participantAmount, { color: colors.success }]}>${(p.shareCents / 100).toFixed(2)}</Text>
               </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
@@ -483,7 +596,7 @@ const styles = StyleSheet.create({
   },
   receiptThumbLabel: { color: "#fff", fontSize: 12, fontWeight: "600" },
   receiptModal: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.92)",
+    flex: 1, backgroundColor: "#000",
     alignItems: "center", justifyContent: "center",
   },
   receiptFull: { width: "100%", height: "80%" },

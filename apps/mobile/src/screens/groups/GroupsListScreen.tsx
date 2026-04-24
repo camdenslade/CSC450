@@ -5,7 +5,7 @@ import {
   Pressable, RefreshControl, StyleSheet, Text, View,
 } from "react-native";
 import { AnimatedPressable } from "../../shared/AnimatedPressable";
-import { Ionicons } from "@expo/vector-icons";
+import { EmptyIllustration } from "../../shared/EmptyIllustration";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Background } from "../../shared/Background";
 import { colors, useColors } from "../../theme/colors";
@@ -86,7 +86,7 @@ export function GroupsListScreen({ onBack, onViewGroup, onCreateGroup }: Props) 
             <ActivityIndicator color={colors.primary} style={styles.spinner} />
           ) : groups.length === 0 ? (
             <View style={styles.empty}>
-              <Ionicons name="people-outline" size={48} color={c.textMuted} style={styles.emptyIcon} />
+              <EmptyIllustration icon="people-outline" />
               <Text style={[styles.emptyTitle, { color: c.textPrimary }]}>No groups yet</Text>
               <Text style={[styles.emptySubtext, { color: c.textMuted }]}>Create one to split tabs with your usual crew.</Text>
               <Pressable style={styles.emptyButton} onPress={onCreateGroup}>

@@ -13,6 +13,7 @@ import { colors } from "../../theme/colors";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiFriend } from "../../api/client";
 import { PlatformIcon } from "../../shared/PlatformIcon";
+import { formatAmountInput } from "../../shared/formatAmount";
 
 
 type Platform_ = "paypal" | "venmo" | "cashapp";
@@ -75,7 +76,7 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
   const amount = subtotalNum > 0 ? (subtotalNum + tipAmount).toFixed(2) : "";
 
   function handleSubtotalChange(val: string) {
-    setSubtotal(val);
+    setSubtotal((prev) => formatAmountInput(prev, val));
     setTipPct(null);
   }
 

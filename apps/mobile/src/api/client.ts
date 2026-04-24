@@ -54,6 +54,7 @@ export interface ApiFriend {
 
 export interface ApiLedgerEntry {
   tabId: string;
+  tabName: string;
   delta: number;
   settled: boolean;
   createdAt: string;

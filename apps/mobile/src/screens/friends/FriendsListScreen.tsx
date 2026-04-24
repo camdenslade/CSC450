@@ -1,5 +1,7 @@
 import { useState, useCallback } from "react";
 import { View, Text, StyleSheet, Pressable, Alert, ScrollView, RefreshControl } from "react-native";
+import { SkeletonCard } from "../../shared/SkeletonCard";
+import { EmptyIllustration } from "../../shared/EmptyIllustration";
 import { useColors } from "../../theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { Layout } from "../../shared/Layout";
@@ -134,9 +136,11 @@ export function FriendsListScreen({ onTabPress, onAddFriend, onCreateTab }: Frie
             {/* Friends list */}
             <View style={styles.section}>
               <Text style={[styles.sectionTitle, { color: c.textSecondary }]}>Friends · {friends.length}</Text>
-              {friends.length === 0 ? (
+              {refreshing ? (
+                <><SkeletonCard /><SkeletonCard /><SkeletonCard /></>
+              ) : friends.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Ionicons name="people-outline" size={48} color={c.textMuted} style={styles.emptyIcon} />
+                  <EmptyIllustration icon="people-outline" />
                   <Text style={[styles.emptyTitle, { color: c.textPrimary }]}>No friends yet</Text>
                   <Text style={[styles.emptySub, { color: c.textMuted }]}>Add friends to split tabs with them.</Text>
                   <Pressable style={styles.emptyBtn} onPress={onAddFriend}>

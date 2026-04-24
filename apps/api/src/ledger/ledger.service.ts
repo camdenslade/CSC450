@@ -12,6 +12,7 @@ export interface LedgerPage {
 
 export interface LedgerEntryView {
     tabId:     string;
+    tabName:   string;
     delta:     number;
     settled:   boolean;
     createdAt: Date;
@@ -44,6 +45,7 @@ export class LedgerService {
 
         const items: LedgerEntryView[] = page.map((e) => ({
             tabId:     e.billId,
+            tabName:   e.bill?.name ?? 'Tab',
             delta:     e.deltaCents,
             settled:   e.settledAt !== null,
             createdAt: e.createdAt,

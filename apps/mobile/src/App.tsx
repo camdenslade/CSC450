@@ -1,6 +1,6 @@
 // apps/mobile/src/App.tsx
-import { useState } from "react";
-import { View } from "react-native";
+import { useState, useEffect } from "react";
+import { View, Linking } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { DataProvider, useData } from "./store/DataContext";
@@ -25,6 +25,7 @@ import { SlideUpScreen } from "./shared/SlideUpScreen";
 import { ThemeProvider, useTheme } from "./theme/ThemeContext";
 import { useColors } from "./theme/colors";
 import { ErrorBoundary } from "./shared/ErrorBoundary";
+import { ResetPasswordScreen } from "./auth/ResetPasswordScreen";
 import { ApiUser, ApiPaymentHandle } from "./api/client";
 
 type OverlayScreen =
@@ -47,6 +48,22 @@ function MainApp() {
   const [overlay, setOverlay] = useState<OverlayScreen>({ type: "none" });
   const [editProfileVisible, setEditProfileVisible] = useState(false);
   const [editProfileData, setEditProfileData] = useState<{ profile: ApiUser; handles: ApiPaymentHandle[] } | null>(null);
+  const [resetOobCode, setResetOobCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    function handleUrl(url: string) {
+      try {
+        const parsed = new URL(url);
+        if (parsed.pathname === "/reset-password" || parsed.hostname === "reset-password") {
+          const code = parsed.searchParams.get("oobCode");
+          if (code) setResetOobCode(code);
+        }
+      } catch {}
+    }
+    Linking.getInitialURL().then((url) => { if (url) handleUrl(url); });
+    const sub = Linking.addEventListener("url", ({ url }) => handleUrl(url));
+    return () => sub.remove();
+  }, []);
 
   if (loading) {
     return (
@@ -80,6 +97,15 @@ function MainApp() {
       <View style={{ flex: 1, backgroundColor: c.background }}>
         <Loader label="Getting your tabs…" />
       </View>
+    );
+  }
+
+  if (resetOobCode) {
+    return (
+      <>
+        <StatusBar style={resolvedScheme === "dark" ? "light" : "dark"} />
+        <ResetPasswordScreen oobCode={resetOobCode} onDone={() => setResetOobCode(null)} />
+      </>
     );
   }
 

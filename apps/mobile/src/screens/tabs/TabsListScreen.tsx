@@ -1,5 +1,7 @@
 import { View, Text, StyleSheet, SectionList, Pressable, RefreshControl } from "react-native";
 import { AnimatedPressable } from "../../shared/AnimatedPressable";
+import { SkeletonCard } from "../../shared/SkeletonCard";
+import { EmptyIllustration } from "../../shared/EmptyIllustration";
 import { useState, useCallback } from "react";
 import { useColors } from "../../theme/colors";
 import { Ionicons } from "@expo/vector-icons";
@@ -113,9 +115,15 @@ export function TabsListScreen({ onTabPress, onViewTabDetail, onCreateTab }: Tab
           </AnimatedPressable>
         </View>
 
-        {bills.length === 0 && (
+        {refreshing && (
+          <View style={styles.listContent}>
+            <SkeletonCard /><SkeletonCard /><SkeletonCard />
+          </View>
+        )}
+
+        {!refreshing && bills.length === 0 && (
           <View style={styles.emptyState}>
-            <Ionicons name="receipt-outline" size={48} color={c.textMuted} style={styles.emptyIcon} />
+            <EmptyIllustration icon="receipt-outline" />
             <Text style={[styles.emptyTitle, { color: c.textPrimary }]}>No tabs yet</Text>
             <Text style={[styles.emptySub, { color: c.textMuted }]}>Create one to start splitting with friends.</Text>
             <AnimatedPressable style={styles.emptyBtn} onPress={onCreateTab}>
@@ -124,7 +132,7 @@ export function TabsListScreen({ onTabPress, onViewTabDetail, onCreateTab }: Tab
           </View>
         )}
 
-        {sections.length > 0 && (
+        {!refreshing && sections.length > 0 && (
           <SectionList
             sections={sections}
             renderItem={renderTab}

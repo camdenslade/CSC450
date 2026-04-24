@@ -1,9 +1,10 @@
 // apps/api/src/app.module.ts
 
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 
 import { SecretsModule } from './secrets/secrets.module';
@@ -51,7 +52,10 @@ import { AppService } from './app.service';
         S3Module,
     ],
     controllers: [AppController],
-    providers:   [AppService],
+    providers:   [
+        AppService,
+        { provide: APP_GUARD, useClass: ThrottlerGuard },
+    ],
 })
 export class AppModule implements NestModule {
     configure(_consumer: MiddlewareConsumer): void {

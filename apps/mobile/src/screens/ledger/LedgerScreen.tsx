@@ -100,7 +100,7 @@ export function LedgerScreen({ onBack }: Props) {
       <View style={styles.row}>
         <View style={styles.rowLeft}>
           <Text style={styles.tabId} numberOfLines={1}>
-            Tab {item.tabId.slice(0, 8)}
+            {item.tabName}
           </Text>
           <Text style={styles.date}>{formatDate(item.createdAt)}</Text>
         </View>
