@@ -89,6 +89,7 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
   const [scanning, setScanning] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [receiptKey, setReceiptKey] = useState<string | null>(null);
+  const [ocrCandidates, setOcrCandidates] = useState<string[]>([]);
   const cameraRef = useRef<CameraView>(null);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
@@ -110,6 +111,7 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
       const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.7 });
       if (!photo?.base64) throw new Error("No photo captured");
       setPreview(photo.base64);
+      setScanning(false); // preview ready — let user tap confirm
     } catch (e: unknown) {
       Alert.alert("Error", e instanceof Error ? e.message : "Capture failed.");
       setScanning(false);
@@ -118,22 +120,56 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
 
   async function handleConfirmPhoto() {
     if (!preview) return;
+    setScanning(true);
+    type OcrResponse = { amount: string | null; candidates: string[]; confidence: "high" | "low" | null; receiptKey: string };
+    let result: OcrResponse | null = null;
     try {
-      const result = await apiClient.post<{ amount: string | null; receiptKey: string }>("/uploads/ocr", { image: preview });
-      if (result.receiptKey) setReceiptKey(result.receiptKey);
-      if (result.amount) {
-        setSubtotal(result.amount);
-        setTipPct(null);
-      } else {
-        Alert.alert("No total found", "Couldn't detect a dollar amount. Enter it manually.");
-      }
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), 20_000),
+      );
+      result = await Promise.race([
+        apiClient.post<OcrResponse>("/uploads/ocr", { image: preview }),
+        timeout,
+      ]);
     } catch (e: unknown) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Scan failed.");
-    } finally {
+      const msg = e instanceof Error && e.message === "timeout"
+        ? "Scan timed out. Try again or enter the amount manually."
+        : "Scan failed. Try again or enter the amount manually.";
       setPreview(null);
       setScanning(false);
       setCameraOpen(false);
+      Alert.alert("Scan failed", msg);
+      return;
     }
+
+    // Always close camera before showing any UI (catch always returns, so result is non-null here)
+    if (result!.receiptKey) setReceiptKey(result!.receiptKey);
+    setPreview(null);
+    setScanning(false);
+    setCameraOpen(false);
+
+    if (!result!.candidates.length) {
+      Alert.alert(
+        "No total found",
+        "This doesn't look like a bill, or the total wasn't readable. Enter the amount manually.",
+      );
+      return;
+    }
+
+    if (result!.amount && result!.confidence === "high") {
+      setSubtotal(result!.amount);
+      setTipPct(null);
+      return;
+    }
+
+    // Multiple candidates or low confidence — show picker
+    setOcrCandidates(result!.candidates);
+  }
+
+  function handlePickCandidate(val: string) {
+    setSubtotal(val);
+    setTipPct(null);
+    setOcrCandidates([]);
   }
 
   function handleRetake() {
@@ -565,6 +601,29 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
         </SafeAreaView>
       </Background>
 
+      {/* OCR candidate picker */}
+      <Modal visible={ocrCandidates.length > 0} transparent animationType="fade">
+        <Pressable style={styles.ocrBackdrop} onPress={() => setOcrCandidates([])}>
+          <Pressable style={styles.ocrSheet} onPress={() => {}}>
+            <Text style={styles.ocrSheetTitle}>Which total is correct?</Text>
+            <Text style={styles.ocrSheetSub}>We found a few amounts. Tap the right one.</Text>
+            {ocrCandidates.map((val) => (
+              <Pressable
+                key={val}
+                style={({ pressed }) => [styles.ocrOption, pressed && { opacity: 0.7 }]}
+                onPress={() => handlePickCandidate(val)}
+              >
+                <Text style={styles.ocrOptionAmount}>${val}</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+              </Pressable>
+            ))}
+            <Pressable style={styles.ocrCancel} onPress={() => setOcrCandidates([])}>
+              <Text style={styles.ocrCancelText}>Enter manually</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* Full-screen camera modal */}
       <Modal visible={cameraOpen} animationType="slide" statusBarTranslucent>
         <View style={styles.cameraModal}>
@@ -576,8 +635,8 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
                 contentFit="cover"
               />
               <View style={styles.cameraControls}>
-                <Pressable onPress={handleRetake} style={styles.cameraCancel}>
-                  <Text style={styles.cameraCancelText}>Retake</Text>
+                <Pressable onPress={scanning ? undefined : handleRetake} style={styles.cameraCancel}>
+                  <Text style={[styles.cameraCancelText, scanning && { opacity: 0.3 }]}>Retake</Text>
                 </Pressable>
                 <Pressable onPress={handleConfirmPhoto} style={styles.cameraShutter} disabled={scanning}>
                   {scanning
@@ -586,7 +645,7 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
                 </Pressable>
                 <View style={styles.cameraSpacer} />
               </View>
-              <Text style={styles.cameraHint}>Looks good? Tap ✓ to scan</Text>
+              <Text style={styles.cameraHint}>{scanning ? "Scanning receipt..." : "Looks good? Tap ✓ to scan"}</Text>
             </>
           ) : (
             <>
@@ -766,6 +825,24 @@ const styles = StyleSheet.create({
   },
   tipTotalLabel: { fontSize: 14, fontWeight: "600", color: colors.primaryDark },
   tipTotalAmount: { fontSize: 18, fontWeight: "800", color: colors.primaryDark },
+
+  ocrBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  ocrSheet: {
+    backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, paddingBottom: 40, gap: 8,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  ocrSheetTitle: { fontSize: 18, fontWeight: "800", color: colors.textPrimary, marginBottom: 2 },
+  ocrSheetSub: { fontSize: 13, color: colors.textMuted, marginBottom: 8 },
+  ocrOption: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingVertical: 16, paddingHorizontal: 18, borderRadius: 14,
+    backgroundColor: colors.surfaceSecondary, marginBottom: 4,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  ocrOptionAmount: { fontSize: 22, fontWeight: "800", color: colors.textPrimary, letterSpacing: -0.5 },
+  ocrCancel: { paddingVertical: 14, alignItems: "center", marginTop: 4 },
+  ocrCancelText: { fontSize: 15, fontWeight: "600", color: colors.textMuted },
 
   cameraBtn: { padding: 6 },
   cameraModal: { flex: 1, backgroundColor: "#000" },

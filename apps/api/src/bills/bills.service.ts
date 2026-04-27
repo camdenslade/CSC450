@@ -7,6 +7,7 @@ import {
     Logger,
     NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Bill } from './bill.entity';
@@ -168,7 +169,7 @@ export class BillsService {
     async findOne(callerDbId: string, billId: string): Promise<Bill & { receiptUrl: string | null }> {
         const bill = await this.bills.findOne({
             where:     { id: billId },
-            relations: ['participants', 'participants.user'],
+            relations: ['owner', 'participants', 'participants.user'],
         });
 
         if (!bill) throw new NotFoundException('Bill not found.');
@@ -327,6 +328,88 @@ export class BillsService {
                 // Best-effort — will retry next tick
             }
         }
+    }
+
+    // Owner-only. Generates a share token if one doesn't exist, returns the share URL.
+    async generateShareToken(callerDbId: string, billId: string): Promise<{ url: string }> {
+        const bill = await this.bills.findOne({ where: { id: billId } });
+        if (!bill) throw new NotFoundException('Bill not found.');
+        if (bill.ownerId !== callerDbId) throw new ForbiddenException();
+
+        if (!bill.shareToken) {
+            bill.shareToken = randomUUID();
+            await this.bills.save(bill);
+        }
+
+        return { url: `https://tabup.cslade.space/tab/${bill.shareToken}` };
+    }
+
+    // Public — no auth required. Returns a lightweight preview for the share page.
+    async getSharePreview(token: string): Promise<{
+        name: string;
+        totalCents: number;
+        currency: string;
+        ownerName: string;
+        participantCount: number;
+        location: string | null;
+    }> {
+        const bill = await this.bills.findOne({
+            where: { shareToken: token },
+            relations: ['owner', 'participants'],
+        });
+        if (!bill) throw new NotFoundException('Share link not found or expired.');
+
+        return {
+            name:             bill.name,
+            totalCents:       bill.totalCents,
+            currency:         bill.currency,
+            ownerName:        bill.owner.displayName,
+            participantCount: bill.participants.length,
+            location:         bill.location,
+        };
+    }
+
+    // Authenticated. Adds the caller as a participant (pending, $0 share until owner splits).
+    // Returns the bill ID so the app can navigate directly to it.
+    async joinViaShareToken(callerDbId: string, token: string): Promise<{ billId: string }> {
+        const bill = await this.bills.findOne({
+            where: { shareToken: token },
+            relations: ['participants'],
+        });
+        if (!bill) throw new NotFoundException('Share link not found or expired.');
+        if (bill.status !== BillStatus.OPEN) throw new BadRequestException('This tab is no longer open.');
+        if (bill.ownerId === callerDbId) throw new BadRequestException('You are the owner of this tab.');
+
+        const alreadyIn = bill.participants.some((p) => p.userId === callerDbId);
+        if (alreadyIn) return { billId: bill.id };
+
+        await this.dataSource.transaction(async (em) => {
+            const participant = em.create(BillParticipant, {
+                billId:     bill.id,
+                userId:     callerDbId,
+                shareCents: 0,
+                state:      ParticipantState.PENDING,
+            });
+            await em.save(participant);
+
+            await em.save(em.create(LedgerEntry, {
+                userId:     callerDbId,
+                billId:     bill.id,
+                deltaCents: 0,
+            }));
+        });
+
+        // Notify the owner that someone joined via link
+        const joiner = await this.users.findOne({ where: { id: callerDbId } });
+        const joinerName = joiner?.displayName ?? 'Someone';
+        this.notifications.sendToUsers(
+            [bill.ownerId],
+            `${joinerName} joined "${bill.name}"`,
+            'They joined via your share link. You can now split their share.',
+            { type: 'tab_joined', billId: bill.id, joinedUserId: callerDbId },
+        ).catch(() => {});
+
+        return { billId: bill.id };
     }
 
     // Owner-only. Open bills only.

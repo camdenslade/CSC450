@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
   Alert, ActivityIndicator, Linking, TextInput, Modal,
-  Animated, Clipboard,
+  Animated, Clipboard, Share,
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,6 +18,7 @@ import { SwipeToSettle } from "../../shared/SwipeToSettle";
 type TabDetailScreenProps = {
   tabId: string;
   onBack: () => void;
+  joinedViaLink?: boolean;
 };
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -28,11 +29,12 @@ function initials(name: string) {
   return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 }
 
-export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
+export function TabDetailScreen({ tabId, onBack, joinedViaLink }: TabDetailScreenProps) {
   const { apiClient, userId } = useAuth();
   const [bill, setBill] = useState<ApiBill | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [addFriendBanner, setAddFriendBanner] = useState(joinedViaLink ?? false);
 
   // Split editing
   const [editingSplits, setEditingSplits] = useState(false);
@@ -170,6 +172,27 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
     showToast("Copied!");
   }
 
+  async function handleShare() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const { url } = await apiClient.post<{ url: string }>(`/tabs/${tabId}/share`, {});
+      await Share.share({ message: `Join my tab on TabUp: ${url}`, url });
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Could not generate share link.");
+    }
+  }
+
+  async function handleAddOwnerAsFriend() {
+    if (!bill) return;
+    setAddFriendBanner(false);
+    try {
+      await apiClient.post("/friends/invite-by-id", { targetUserId: bill.ownerId });
+      showToast("Friend request sent!");
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Failed to send request.");
+    }
+  }
+
   function handleCancelTab() {
     Alert.alert("Cancel Tab", "Are you sure you want to cancel this tab?", [
       { text: "No", style: "cancel" },
@@ -260,6 +283,26 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
           <Text style={styles.backBtnText}>← Back</Text>
         </Pressable>
 
+        {/* Add friend banner — shown when user joined via a share link */}
+        {addFriendBanner && bill && !isOwner && (
+          <View style={styles.friendBanner}>
+            <View style={styles.friendBannerLeft}>
+              <Ionicons name="person-add-outline" size={18} color={colors.primary} />
+              <Text style={styles.friendBannerText}>
+                Add {bill.owner?.displayName ?? "the owner"} as a friend?
+              </Text>
+            </View>
+            <View style={styles.friendBannerActions}>
+              <Pressable onPress={handleAddOwnerAsFriend} style={styles.friendBannerBtn}>
+                <Text style={styles.friendBannerBtnText}>Add</Text>
+              </Pressable>
+              <Pressable onPress={() => setAddFriendBanner(false)} hitSlop={8}>
+                <Ionicons name="close" size={18} color={colors.textMuted} />
+              </Pressable>
+            </View>
+          </View>
+        )}
+
         <View style={styles.titleRow}>
           <Text style={styles.title}>{bill.name}</Text>
           <View style={[styles.statusBadge, isOpen ? styles.statusOpen : styles.statusSettled]}>
@@ -267,6 +310,11 @@ export function TabDetailScreen({ tabId, onBack }: TabDetailScreenProps) {
               {isOpen ? "Collecting" : "Settled"}
             </Text>
           </View>
+          {isOwner && isOpen && (
+            <Pressable onPress={handleShare} style={styles.shareBtn} hitSlop={8}>
+              <Ionicons name="share-outline" size={20} color={colors.primary} />
+            </Pressable>
+          )}
         </View>
         {bill.location ? <Text style={styles.location}>{bill.location}</Text> : null}
 
@@ -503,6 +551,17 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 },
   title: { fontSize: 26, fontWeight: "800", color: colors.textPrimary, flex: 1, letterSpacing: -0.5 },
   location: { fontSize: 14, color: colors.textMuted, marginBottom: 20 },
+  shareBtn: { padding: 4 },
+  friendBanner: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: colors.primaryLight, borderRadius: 14, padding: 14,
+    marginBottom: 16, borderWidth: 1, borderColor: colors.primary + "40",
+  },
+  friendBannerLeft: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  friendBannerText: { fontSize: 13, fontWeight: "600", color: colors.primaryDark, flex: 1 },
+  friendBannerActions: { flexDirection: "row", alignItems: "center", gap: 10 },
+  friendBannerBtn: { backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
+  friendBannerBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
   statusBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
   statusOpen: { backgroundColor: colors.warning + "20" },
   statusSettled: { backgroundColor: colors.primaryLight },
@@ -580,6 +639,11 @@ const styles = StyleSheet.create({
   requestBtnText: { fontSize: 12, fontWeight: "700", color: colors.primaryDark },
   settleBtn: { backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 4 },
   settleBtnText: { fontSize: 12, fontWeight: "700", color: "#fff" },
+  celebrationOverlay: {
+    alignItems: "center", justifyContent: "center", gap: 12,
+    backgroundColor: "rgba(0,0,0,0.15)",
+  },
+  celebrationText: { fontSize: 28, fontWeight: "800", color: colors.primary },
   cancelBtn: { marginTop: 8, paddingVertical: 14, borderRadius: 14, alignItems: "center", borderWidth: 1.5, borderColor: colors.danger },
   cancelBtnText: { fontSize: 15, fontWeight: "600", color: colors.danger },
   disabled: { opacity: 0.6 },

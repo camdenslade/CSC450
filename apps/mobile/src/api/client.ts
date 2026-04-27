@@ -32,6 +32,7 @@ export interface ApiBillParticipant {
 export interface ApiBill {
   id: string;
   ownerId: string;
+  owner?: ApiUser;
   name: string;
   location: string | null;
   totalCents: number;

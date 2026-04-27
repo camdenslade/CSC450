@@ -21,7 +21,6 @@ import { SettleParticipantDto } from './dto/settle-participant.dto';
 import { RemindParticipantDto } from './dto/remind-participant.dto';
 import { UsersService } from '../users/users.service';
 
-@UseGuards(FirebaseAuthGuard)
 @Controller('v1/tabs')
 export class BillsController {
     constructor(
@@ -29,12 +28,20 @@ export class BillsController {
         private readonly usersService: UsersService,
     ) {}
 
+    /** Public — no auth required. Returns a tab preview for the share link page. */
+    @Get('preview/:token')
+    async getPreview(@Param('token') token: string) {
+        return this.billsService.getSharePreview(token);
+    }
+
+    @UseGuards(FirebaseAuthGuard)
     @Get()
     async findAll(@CurrentUser() caller: AuthenticatedUser) {
         const userId = await this.usersService.getUserDbId(caller.uid);
         return this.billsService.listForUser(userId);
     }
 
+    @UseGuards(FirebaseAuthGuard)
     @Post()
     async create(
         @CurrentUser() caller: AuthenticatedUser,
@@ -43,6 +50,7 @@ export class BillsController {
         return this.billsService.create(caller.uid, dto);
     }
 
+    @UseGuards(FirebaseAuthGuard)
     @Get(':id')
     async findOne(
         @CurrentUser() caller: AuthenticatedUser,
@@ -52,6 +60,7 @@ export class BillsController {
         return this.billsService.findOne(userId, id);
     }
 
+    @UseGuards(FirebaseAuthGuard)
     @Post(':id/split')
     async updateSplit(
         @CurrentUser() caller: AuthenticatedUser,
@@ -62,6 +71,7 @@ export class BillsController {
         return this.billsService.updateSplit(userId, id, dto);
     }
 
+    @UseGuards(FirebaseAuthGuard)
     @Post(':id/settle')
     async settle(
         @CurrentUser() caller: AuthenticatedUser,
@@ -72,6 +82,7 @@ export class BillsController {
         return this.billsService.settleParticipant(userId, id, dto.participantId);
     }
 
+    @UseGuards(FirebaseAuthGuard)
     @Post(':id/self-settle')
     @HttpCode(HttpStatus.NO_CONTENT)
     async selfSettle(
@@ -82,6 +93,7 @@ export class BillsController {
         return this.billsService.selfSettle(userId, id);
     }
 
+    @UseGuards(FirebaseAuthGuard)
     @Post(':id/remind')
     @HttpCode(HttpStatus.NO_CONTENT)
     async remind(
@@ -93,6 +105,27 @@ export class BillsController {
         return this.billsService.remindParticipant(userId, id, dto.participantId, dto.delayDays);
     }
 
+    @UseGuards(FirebaseAuthGuard)
+    @Post(':id/share')
+    async share(
+        @CurrentUser() caller: AuthenticatedUser,
+        @Param('id') id: string,
+    ) {
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.billsService.generateShareToken(userId, id);
+    }
+
+    @UseGuards(FirebaseAuthGuard)
+    @Post('join/:token')
+    async joinViaToken(
+        @CurrentUser() caller: AuthenticatedUser,
+        @Param('token') token: string,
+    ) {
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.billsService.joinViaShareToken(userId, token);
+    }
+
+    @UseGuards(FirebaseAuthGuard)
     @Delete(':id')
     @HttpCode(HttpStatus.NO_CONTENT)
     async cancel(

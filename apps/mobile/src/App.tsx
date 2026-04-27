@@ -1,6 +1,6 @@
 // apps/mobile/src/App.tsx
 import { useState, useEffect } from "react";
-import { View, Linking } from "react-native";
+import { View, Linking, Alert } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { DataProvider, useData } from "./store/DataContext";
@@ -30,7 +30,7 @@ import { ApiUser, ApiPaymentHandle } from "./api/client";
 
 type OverlayScreen =
   | { type: "none" }
-  | { type: "tabDetail"; tabId: string }
+  | { type: "tabDetail"; tabId: string; joinedUserId?: string }
   | { type: "createTab" }
   | { type: "addFriend" }
   | { type: "ledger" }
@@ -39,7 +39,7 @@ type OverlayScreen =
   | { type: "createGroup" };
 
 function MainApp() {
-  const { user, loading, needsOnboarding } = useAuth();
+  const { user, loading, needsOnboarding, apiClient } = useAuth();
   const { ready } = useData();
   const c = useColors();
   const { resolvedScheme } = useTheme();
@@ -49,14 +49,40 @@ function MainApp() {
   const [editProfileVisible, setEditProfileVisible] = useState(false);
   const [editProfileData, setEditProfileData] = useState<{ profile: ApiUser; handles: ApiPaymentHandle[] } | null>(null);
   const [resetOobCode, setResetOobCode] = useState<string | null>(null);
+  const [pendingJoinToken, setPendingJoinToken] = useState<string | null>(null);
+
+  // When user is authenticated and ready, process any pending join token
+  useEffect(() => {
+    if (!pendingJoinToken || !user || !ready) return;
+    const token = pendingJoinToken;
+    setPendingJoinToken(null);
+    apiClient.post<{ billId: string }>(`/tabs/join/${token}`, {})
+      .then(({ billId }) => {
+        setOverlay({ type: "tabDetail", tabId: billId, joinedUserId: "via-link" });
+        setActiveTab("Tabs");
+      })
+      .catch((e: Error) => {
+        Alert.alert("Could not join tab", e.message);
+      });
+  }, [pendingJoinToken, user, ready]);
 
   useEffect(() => {
     function handleUrl(url: string) {
       try {
         const parsed = new URL(url);
+        // Handle password reset
         if (parsed.pathname === "/reset-password" || parsed.hostname === "reset-password") {
           const code = parsed.searchParams.get("oobCode");
           if (code) setResetOobCode(code);
+          return;
+        }
+        // Handle tab share links: tabup://tab/join/<token> or https://tabup.cslade.space/tab/<token>
+        const tabJoinMatch =
+          parsed.pathname.match(/^\/tab\/join\/([^/]+)$/) ||
+          parsed.pathname.match(/^\/tab\/([^/]+)$/);
+        if (tabJoinMatch) {
+          const token = tabJoinMatch[1];
+          setPendingJoinToken(token);
         }
       } catch {}
     }
@@ -168,7 +194,13 @@ function MainApp() {
       {/* Overlay screens — slide up on open, slide down on back */}
       {overlay.type === "tabDetail" && (
         <SlideUpScreen onBack={() => goBack("Tabs")}>
-          {(back) => <TabDetailScreen tabId={overlay.tabId} onBack={back} />}
+          {(back) => (
+            <TabDetailScreen
+              tabId={overlay.tabId}
+              onBack={back}
+              joinedViaLink={overlay.joinedUserId === "via-link"}
+            />
+          )}
         </SlideUpScreen>
       )}
       {overlay.type === "createTab" && (

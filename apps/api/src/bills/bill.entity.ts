@@ -50,6 +50,10 @@ export class Bill extends BaseEntity {
     })
     status: BillStatus;
 
+    @Index({ unique: true, sparse: true })
+    @Column({ name: 'share_token', type: 'uuid', nullable: true, unique: true })
+    shareToken: string | null;
+
     @OneToMany(() => BillParticipant, (p) => p.bill, { cascade: true })
     participants: BillParticipant[];
 

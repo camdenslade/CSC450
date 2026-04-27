@@ -1,7 +1,7 @@
 // apps/mobile/src/auth/LoginScreen.tsx
 import { useRef, useState } from "react";
 import {
-  View, Text, TextInput, Pressable,
+  View, Text, TextInput, Pressable, Linking,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -166,6 +166,15 @@ export function LoginScreen() {
                 returnKeyType="done"
                 onSubmitEditing={handleSubmit}
               />
+            )}
+
+            {mode === "signup" && (
+              <Text style={{ fontSize: 12, color: c.textMuted, lineHeight: 18, marginTop: 4, marginBottom: 12 }}>
+                By creating an account you agree to our{" "}
+                <Text style={{ color: c.primary }} onPress={() => Linking.openURL("https://tabup.cslade.space/terms")}>Terms of Service</Text>
+                {" "}and{" "}
+                <Text style={{ color: c.primary }} onPress={() => Linking.openURL("https://tabup.cslade.space/privacy")}>Privacy Policy</Text>.
+              </Text>
             )}
 
             <Pressable

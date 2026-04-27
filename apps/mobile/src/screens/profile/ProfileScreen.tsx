@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import {
-  Alert, Pressable, ScrollView, StyleSheet, Text, View,
+  Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View,
 } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -143,6 +143,22 @@ export function ProfileScreen({ onTabPress, onEditProfile }: ProfileScreenProps)
               </Pressable>
             );
           })}
+        </View>
+
+        {/* Support */}
+        <Text style={s.sectionTitle}>Support</Text>
+        <View style={s.card}>
+          {[
+            { label: "Contact Support", icon: "mail-outline" as const, onPress: () => Linking.openURL("mailto:csladedev@outlook.com") },
+            { label: "Privacy Policy",  icon: "shield-checkmark-outline" as const, onPress: () => Linking.openURL("https://tabup.cslade.space/privacy") },
+            { label: "Terms of Service", icon: "document-text-outline" as const, onPress: () => Linking.openURL("https://tabup.cslade.space/terms") },
+          ].map((item, i) => (
+            <Pressable key={item.label} style={[s.themeRow, i > 0 && s.handleRowBorder]} onPress={item.onPress}>
+              <Ionicons name={item.icon} size={20} color={c.textSecondary} style={{ marginRight: 14 }} />
+              <Text style={s.themeLabel}>{item.label}</Text>
+              <Ionicons name="chevron-forward" size={16} color={c.textMuted} />
+            </Pressable>
+          ))}
         </View>
 
         <Pressable style={s.logoutBtn} onPress={handleLogout}>
