@@ -46,6 +46,25 @@ export class BillsService {
         const receiptUrl = bill.receiptS3Key
             ? await this.s3.createReadUrl(bill.receiptS3Key)
             : null;
+
+        // Sign each participant's user avatar in parallel
+        if (bill.participants) {
+            await Promise.all(bill.participants.map(async (p) => {
+                if (p.user && p.user.avatarS3Key) {
+                    (p.user as any).avatarUrl = await this.s3.createReadUrl(p.user.avatarS3Key);
+                } else if (p.user) {
+                    (p.user as any).avatarUrl = null;
+                }
+            }));
+        }
+
+        // Sign owner avatar if present
+        if (bill.owner) {
+            (bill.owner as any).avatarUrl = bill.owner.avatarS3Key
+                ? await this.s3.createReadUrl(bill.owner.avatarS3Key)
+                : null;
+        }
+
         return Object.assign(bill, { receiptUrl });
     }
 
@@ -159,6 +178,7 @@ export class BillsService {
         const bills = await this.bills
             .createQueryBuilder('bill')
             .leftJoinAndSelect('bill.participants', 'participant')
+            .leftJoinAndSelect('participant.user', 'user')
             .where('bill.ownerId = :id OR participant.userId = :id', { id: callerDbId })
             .orderBy('bill.createdAt', 'DESC')
             .getMany();
@@ -341,7 +361,7 @@ export class BillsService {
             await this.bills.save(bill);
         }
 
-        return { url: `https://tabup.cslade.space/tab/${bill.shareToken}` };
+        return { url: `tabup://tab/join/${bill.shareToken}` };
     }
 
     // Public — no auth required. Returns a lightweight preview for the share page.
@@ -422,5 +442,12 @@ export class BillsService {
         }
         bill.status = BillStatus.CANCELLED;
         await this.bills.save(bill);
+    }
+
+    async hardDelete(callerDbId: string, billId: string): Promise<void> {
+        const bill = await this.bills.findOne({ where: { id: billId } });
+        if (!bill) throw new NotFoundException('Bill not found.');
+        if (bill.ownerId !== callerDbId) throw new ForbiddenException();
+        await this.bills.remove(bill);
     }
 }

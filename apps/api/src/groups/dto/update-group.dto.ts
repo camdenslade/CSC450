@@ -1,8 +1,13 @@
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class UpdateGroupDto {
+    @IsOptional()
     @IsString()
     @IsNotEmpty()
     @MaxLength(80)
-    name: string;
+    name?: string;
+
+    @IsOptional()
+    @IsString()
+    avatarS3Key?: string;
 }

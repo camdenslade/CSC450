@@ -22,7 +22,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "app.tabup.us",
       "googleServicesFile": "./GoogleService-Info.plist",
-      "associatedDomains": ["applinks:tabup.cslade.space"]
+      "associatedDomains": [
+        "applinks:tabup.cslade.space"
+      ]
     },
     "android": {
       "adaptiveIcon": {
@@ -41,6 +43,12 @@
       "@react-native-firebase/app",
       "@react-native-firebase/auth",
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "630711da-097f-4202-808a-521490cfb586"
+      }
+    },
+    "owner": "camdenslade"
   }
 }

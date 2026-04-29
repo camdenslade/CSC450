@@ -12,6 +12,7 @@ import { Repository } from 'typeorm';
 import { Friend } from './friend.entity';
 import { User } from '../users/user.entity';
 import { UsersService } from '../users/users.service';
+import { S3Service } from '../s3/s3.service';
 import { FriendSource, FriendStatus } from '../common/enums';
 import { InviteFriendDto } from './dto/invite-friend.dto';
 
@@ -23,24 +24,38 @@ export class FriendsService {
         @InjectRepository(User)
         private readonly users: Repository<User>,
         private readonly usersService: UsersService,
+        private readonly s3: S3Service,
     ) {}
+
+    private async signUserAvatar(user: User): Promise<User & { avatarUrl: string | null }> {
+        const avatarUrl = user.avatarS3Key ? await this.s3.createReadUrl(user.avatarS3Key) : null;
+        return { ...user, avatarUrl };
+    }
+
+    private async signFriend(f: Friend): Promise<Friend> {
+        if (f.requester) (f as any).requester = await this.signUserAvatar(f.requester);
+        if (f.recipient) (f as any).recipient = await this.signUserAvatar(f.recipient);
+        return f;
+    }
 
     /** @returns Pending friend requests where the caller is the recipient. */
     async listRequests(callerDbId: string): Promise<Friend[]> {
-        return this.friends.find({
+        const records = await this.friends.find({
             where: { recipientId: callerDbId, status: FriendStatus.PENDING },
             relations: ['requester'],
         });
+        return Promise.all(records.map((f) => this.signFriend(f)));
     }
 
     async listFriends(callerDbId: string): Promise<Friend[]> {
-        return this.friends.find({
+        const records = await this.friends.find({
             where: [
                 { requesterId: callerDbId, status: FriendStatus.ACCEPTED },
                 { recipientId: callerDbId, status: FriendStatus.ACCEPTED },
             ],
-            relations: ['requester', 'recipient'],
+            relations: ['requester', 'requester.paymentHandles', 'recipient', 'recipient.paymentHandles'],
         });
+        return Promise.all(records.map((f) => this.signFriend(f)));
     }
 
     // Send a friend request directly by target user DB ID (used after a name search).
@@ -74,8 +89,6 @@ export class FriendsService {
 
         return this.friends.save(record);
     }
-
-    // ---------------------------------------------------------
 
     // Hashes the contact value before lookup - raw PII never leaves this method.
     async invite(callerUid: string, dto: InviteFriendDto): Promise<Friend> {

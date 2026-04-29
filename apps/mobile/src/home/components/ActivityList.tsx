@@ -64,14 +64,14 @@ export function ActivityList({ items }: { items: ActivityItem[] }) {
   const c = useColors();
   const bubbleColor: Record<ActivityItem["tone"], string> = {
     success: c.primaryLight,
-    info: "#eff6ff",
-    danger: "#fef2f2",
+    info: c.primaryLight,
+    danger: c.primaryLight,
     muted: c.surfaceSecondary,
   };
   const iconColor: Record<ActivityItem["tone"], string> = {
-    success: c.success,
-    info: "#3b82f6",
-    danger: c.danger,
+    success: c.primary,
+    info: c.primary,
+    danger: c.primaryDark,
     muted: c.textMuted,
   };
   const amountColor = (tone: ActivityItem["tone"]) =>

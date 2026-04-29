@@ -7,11 +7,13 @@ import { GroupsController } from './groups.controller';
 import { Group } from './group.entity';
 import { GroupMember } from './group-member.entity';
 import { UsersModule } from '../users/users.module';
+import { S3Module } from '../s3/s3.module';
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([Group, GroupMember]),
         UsersModule,
+        S3Module,
     ],
     providers:   [GroupsService],
     controllers: [GroupsController],

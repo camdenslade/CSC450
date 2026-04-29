@@ -3,9 +3,7 @@ import { API_BASE } from "./config";
 
 export type TokenGetter = () => Promise<string | null>;
 
-// -----------------------------------------------
 // Shared response types
-// -----------------------------------------------
 
 export interface ApiUser {
   id: string;
@@ -14,6 +12,7 @@ export interface ApiUser {
   phone?: string | null;
   email?: string | null;
   avatarUrl?: string | null;
+  paymentHandles?: { platform: "paypal" | "venmo" | "cashapp"; handle: string }[];
 }
 
 export interface ApiBillParticipant {
@@ -83,14 +82,13 @@ export interface ApiGroup {
   ownerId: string;
   name: string;
   avatarS3Key: string | null;
+  avatarUrl: string | null;
   createdAt: string;
   updatedAt: string;
   members: ApiGroupMember[];
 }
 
-// -----------------------------------------------
 // Client factory
-// -----------------------------------------------
 
 async function request<T>(
   method: string,

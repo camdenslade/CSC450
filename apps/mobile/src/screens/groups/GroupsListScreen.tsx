@@ -7,6 +7,7 @@ import {
 import { AnimatedPressable } from "../../shared/AnimatedPressable";
 import { EmptyIllustration } from "../../shared/EmptyIllustration";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import { Background } from "../../shared/Background";
 import { colors, useColors } from "../../theme/colors";
 import { useAuth } from "../../auth/AuthContext";
@@ -48,22 +49,41 @@ export function GroupsListScreen({ onBack, onViewGroup, onCreateGroup }: Props) 
     setRefreshing(false);
   }, [fetchGroups]);
 
-  function renderGroup({ item, index }: { item: ApiGroup; index: number }) {
+  function renderGroup({ item }: { item: ApiGroup }) {
+    const memberPreview = item.members.slice(0, 3).map((m) => initials(m.user.displayName));
     return (
       <AnimatedPressable
-        style={[styles.card, index > 0 && styles.cardBorder]}
+        style={styles.card}
         onPress={() => onViewGroup(item.id)}
       >
-        <View style={styles.cardAvatar}>
-          <Text style={styles.cardAvatarText}>{initials(item.name)}</Text>
+        <View style={styles.cardTop}>
+          <View style={styles.cardAvatar}>
+            <Text style={styles.cardAvatarText}>{initials(item.name)}</Text>
+          </View>
+          <View style={styles.cardBody}>
+            <Text style={styles.cardName}>{item.name}</Text>
+            <Text style={styles.cardMeta}>
+              {item.members.length} {item.members.length === 1 ? "member" : "members"}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
         </View>
-        <View style={styles.cardBody}>
-          <Text style={styles.cardName}>{item.name}</Text>
-          <Text style={styles.cardMeta}>
-            {item.members.length} {item.members.length === 1 ? "member" : "members"}
-          </Text>
-        </View>
-        <Text style={styles.chevron}>›</Text>
+        {memberPreview.length > 0 && (
+          <View style={styles.cardFooter}>
+            <View style={styles.avatarStack}>
+              {memberPreview.map((init, i) => (
+                <View key={i} style={[styles.stackAvatar, { marginLeft: i === 0 ? 0 : -8, zIndex: memberPreview.length - i }]}>
+                  <Text style={styles.stackAvatarText}>{init}</Text>
+                </View>
+              ))}
+              {item.members.length > 3 && (
+                <View style={[styles.stackAvatar, styles.stackAvatarMore, { marginLeft: -8 }]}>
+                  <Text style={styles.stackAvatarMoreText}>+{item.members.length - 3}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
       </AnimatedPressable>
     );
   }
@@ -99,8 +119,7 @@ export function GroupsListScreen({ onBack, onViewGroup, onCreateGroup }: Props) 
               keyExtractor={(g) => g.id}
               renderItem={renderGroup}
               contentContainerStyle={styles.list}
-              ListHeaderComponent={<View style={styles.listCard} />}
-              ListFooterComponent={<View style={styles.listCardFooter} />}
+              showsVerticalScrollIndicator={false}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
             />
           )}
@@ -111,31 +130,23 @@ export function GroupsListScreen({ onBack, onViewGroup, onCreateGroup }: Props) 
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 8, paddingHorizontal: 16 },
+  container: { flex: 1, paddingTop: 8 },
   header: {
     flexDirection: "row", alignItems: "center", marginBottom: 24,
+    paddingHorizontal: 16,
   },
   back: { fontSize: 15, fontWeight: "600", color: colors.primary, minWidth: 64 },
   title: { flex: 1, fontSize: 22, fontWeight: "800", color: colors.textPrimary, textAlign: "center", letterSpacing: -0.5 },
   newBtn: { backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
   newBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
   spinner: { marginTop: 60 },
-  list: { paddingBottom: 40 },
-  listCard: {
-    backgroundColor: colors.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16,
-    borderWidth: 1, borderBottomWidth: 0, borderColor: colors.border,
-  },
-  listCardFooter: {
-    backgroundColor: colors.surface, borderBottomLeftRadius: 16, borderBottomRightRadius: 16,
-    borderWidth: 1, borderTopWidth: 0, borderColor: colors.border, height: 4,
-  },
+  list: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 100 },
   card: {
-    backgroundColor: colors.surface, padding: 16,
-    flexDirection: "row", alignItems: "center", gap: 14,
+    backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 10,
     borderWidth: 1, borderColor: colors.border,
-    shadowColor: "#000", shadowOpacity: 0.02, shadowOffset: { width: 0, height: 1 }, shadowRadius: 4,
+    shadowColor: "#000", shadowOpacity: 0.04, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 2,
   },
-  cardBorder: { borderTopWidth: 0 },
+  cardTop: { flexDirection: "row", alignItems: "center", gap: 14 },
   cardAvatar: {
     width: 46, height: 46, borderRadius: 14, backgroundColor: colors.primaryLight,
     alignItems: "center", justifyContent: "center",
@@ -144,7 +155,16 @@ const styles = StyleSheet.create({
   cardBody: { flex: 1 },
   cardName: { fontSize: 16, fontWeight: "700", color: colors.textPrimary },
   cardMeta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  chevron: { fontSize: 22, color: colors.textMuted },
+  cardFooter: { flexDirection: "row", marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.divider },
+  avatarStack: { flexDirection: "row", alignItems: "center" },
+  stackAvatar: {
+    width: 28, height: 28, borderRadius: 8, backgroundColor: colors.primaryLight,
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 2, borderColor: colors.surface,
+  },
+  stackAvatarText: { fontSize: 10, fontWeight: "800", color: colors.primaryDark },
+  stackAvatarMore: { backgroundColor: colors.surfaceSecondary },
+  stackAvatarMoreText: { fontSize: 9, fontWeight: "700", color: colors.textMuted },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10 },
   emptyIcon: { marginBottom: 8 },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },

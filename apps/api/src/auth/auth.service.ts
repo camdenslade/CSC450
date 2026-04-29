@@ -57,7 +57,7 @@ export class AuthService implements OnModuleInit {
         }
 
         const existing = await this.users.findOne({ where: { authProviderUid: decoded.uid } });
-        if (existing) return { user: existing, isNew: existing.displayName === '' };
+        if (existing) return { user: existing, isNew: false };
 
         // First-time sign-in — displayName set during onboarding, not here
         try {

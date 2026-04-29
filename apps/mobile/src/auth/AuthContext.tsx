@@ -75,7 +75,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (fbUser) {
         try {
-          const cached = await SecureStore.getItemAsync(USER_ID_KEY);
+          const cached = await SecureStore.getItemAsync(USER_ID_KEY).catch((err) => {
+            console.warn("[Auth] SecureStore read failed:", err);
+            return null;
+          });
           if (cached) {
             setUserId(cached);
             const onboardingDone = await SecureStore.getItemAsync(ONBOARDING_DONE_KEY);
@@ -94,7 +97,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUserId(uid);
             setNeedsOnboarding(isNew);
           } catch {
-            // Still failed — user will see login screen on next cold start
+            // Still failed — sign out so they get a clean login screen
+            await fbSignOut(getAuth()).catch(() => {});
+            setUserId(null);
+            setNeedsOnboarding(false);
           }
         }
       } else {
@@ -137,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await fbUser.delete();
       } catch (err: unknown) {
         // Firebase requires recent login before account deletion.
-        // DB is already deleted — sign them out so they land on login screen.
+        // DB is already deleted - sign them out so they land on login screen.
         // On next sign-in the exchange will create a fresh account.
         const code = (err as { code?: string }).code;
         if (code === "auth/requires-recent-login") {

@@ -135,4 +135,15 @@ export class BillsController {
         const userId = await this.usersService.getUserDbId(caller.uid);
         return this.billsService.cancel(userId, id);
     }
+
+    @UseGuards(FirebaseAuthGuard)
+    @Delete(':id/delete')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    async hardDelete(
+        @CurrentUser() caller: AuthenticatedUser,
+        @Param('id') id: string,
+    ) {
+        const userId = await this.usersService.getUserDbId(caller.uid);
+        return this.billsService.hardDelete(userId, id);
+    }
 }

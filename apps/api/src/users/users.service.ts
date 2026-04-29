@@ -192,8 +192,6 @@ export class UsersService implements OnModuleInit {
         );
     }
 
-    // ---------------------------------------------------------
-
     async deleteAccount(uid: string): Promise<void> {
         const user = await this.findByFirebaseUid(uid);
         if (!user) throw new NotFoundException('User not found.');

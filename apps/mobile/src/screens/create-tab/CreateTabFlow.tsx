@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Pressable, Modal,
-  TextInput, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Animated,
+  TextInput, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Animated, Share,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -14,6 +14,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { ApiFriend } from "../../api/client";
 import { PlatformIcon } from "../../shared/PlatformIcon";
 import { formatAmountInput } from "../../shared/formatAmount";
+
 
 
 type Platform_ = "paypal" | "venmo" | "cashapp";
@@ -181,6 +182,49 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
   const [friends, setFriends] = useState<ApiFriend[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [inviteViaLink] = useState(false);
+
+  // Step 2 search (shown when no friends)
+  type SearchResult = { user: { id: string; displayName: string }; matchedPlatform: string | null; matchedHandle: string | null };
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [sentRequestIds, setSentRequestIds] = useState<Set<string>>(new Set());
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  async function runSearch(q: string) {
+    if (q.length < 2) { setSearchResults([]); setSearched(false); return; }
+    setSearching(true);
+    try {
+      const data = await apiClient.get<SearchResult[]>(`/users/search?q=${encodeURIComponent(q)}`);
+      setSearchResults(data);
+      setSearched(true);
+    } catch { /* silent */ } finally { setSearching(false); }
+  }
+
+  function handleSearchChange(text: string) {
+    setSearchQuery(text);
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    searchDebounce.current = setTimeout(() => runSearch(text.trim()), 350);
+  }
+
+  async function handleAddFromSearch(result: SearchResult) {
+    const { user } = result;
+    try {
+      await apiClient.post("/friends/invite-by-id", { targetUserId: user.id });
+      setSentRequestIds((prev) => new Set([...prev, user.id]));
+      // Also select them for the tab
+      setSelectedIds((prev) => new Set([...prev, user.id]));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed.";
+      if (msg.includes("Already friends")) {
+        setSelectedIds((prev) => new Set([...prev, user.id]));
+      } else {
+        Alert.alert("Error", msg);
+      }
+    }
+  }
 
   // Step 3
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
@@ -207,15 +251,13 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
   }
 
   function handleStep2Next() {
-    if (selectedIds.size === 0) {
-      Alert.alert("Error", "Please select at least one friend.");
+    if (selectedIds.size === 0 && !inviteViaLink) {
+      Alert.alert("Error", "Select at least one friend or enable Invite via link.");
       return;
     }
-    const totalPeople = selectedIds.size + 1;
-    const evenAmount = billAmount / totalPeople;
-    const rows: ParticipantRow[] = [
-      { userId: userId!, name: "You", amountStr: evenAmount.toFixed(2), platform: "venmo" },
-    ];
+    const totalPeople = selectedIds.size;
+    const evenAmount = totalPeople > 0 ? billAmount / totalPeople : billAmount;
+    const rows: ParticipantRow[] = [];
     for (const id of selectedIds) {
       const f = friends.find((fr) => otherUser(fr, userId!).id === id);
       if (!f) continue;
@@ -236,7 +278,7 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
 
   function handleSplitTypeChange(type: "even" | "custom") {
     setSplitType(type);
-    if (type === "even") {
+    if (type === "even" && participants.length > 0) {
       const each = billAmount / participants.length;
       setParticipants(participants.map((p) => ({ ...p, amountStr: each.toFixed(2) })));
     }
@@ -262,7 +304,7 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
   async function handleCreateTab() {
     setSubmitting(true);
     try {
-      await apiClient.post("/tabs", {
+      const bill = await apiClient.post<{ id: string }>("/tabs", {
         name: tabName || "Tab",
         location: location || undefined,
         total: Math.round(billAmount * 100),
@@ -273,6 +315,12 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
           share: Math.round((parseFloat(p.amountStr) || 0) * 100),
         })),
       });
+      if (inviteViaLink) {
+        try {
+          const { url } = await apiClient.post<{ url: string }>(`/tabs/${bill.id}/share`, {});
+          await Share.share({ message: `Join my tab on TabUp: ${url}`, url });
+        } catch {}
+      }
       onComplete();
     } catch (e: unknown) {
       Alert.alert("Error", e instanceof Error ? e.message : "Failed to create tab.");
@@ -284,7 +332,7 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
   const totalSplit = participants.reduce((s, p) => s + (parseFloat(p.amountStr) || 0), 0);
   const remaining = billAmount - totalSplit;
   const step1Valid = subtotalNum > 0;
-  const step2Valid = selectedIds.size > 0;
+  const step2Valid = selectedIds.size > 0 || inviteViaLink;
 
   const STEPS = ["Details", "People", "Split", "Review"];
 
@@ -414,13 +462,7 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
 
                   {friendsLoading ? (
                     <ActivityIndicator color={colors.primary} style={styles.spinner} />
-                  ) : friends.length === 0 ? (
-                    <View style={styles.emptyBox}>
-                      <Ionicons name="people-outline" size={44} color={colors.textMuted} style={styles.emptyIcon} />
-                      <Text style={styles.emptyTitle}>No friends yet</Text>
-                      <Text style={styles.emptySub}>Add friends from the Friends tab first.</Text>
-                    </View>
-                  ) : (
+                  ) : friends.length > 0 ? (
                     <View style={styles.friendsList}>
                       {friends.map((f) => {
                         const u = otherUser(f, userId!);
@@ -434,7 +476,7 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
                             <View style={[styles.avatarSmall, selected && styles.avatarSmallSelected]}>
                               <Text style={styles.avatarSmallText}>{initials(u.displayName)}</Text>
                             </View>
-                            <Text style={styles.friendName}>{u.displayName}</Text>
+                            <Text style={styles.friendName} numberOfLines={1}>{u.displayName}</Text>
                             <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
                               {selected && <Ionicons name="checkmark" size={14} color="#fff" />}
                             </View>
@@ -442,6 +484,51 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
                         );
                       })}
                     </View>
+                  ) : (
+                    <>
+                      <View style={styles.searchRow}>
+                        <TextInput
+                          style={styles.searchInput}
+                          placeholder="Search by name or handle..."
+                          placeholderTextColor={colors.textMuted}
+                          value={searchQuery}
+                          onChangeText={handleSearchChange}
+                          autoCorrect={false}
+                          returnKeyType="search"
+                        />
+                        {searching && <ActivityIndicator color={colors.primary} style={{ position: "absolute", right: 14 }} />}
+                      </View>
+                      {searchResults.length > 0 ? (
+                        <View style={styles.friendsList}>
+                          {searchResults.map((r) => {
+                            const added = selectedIds.has(r.user.id);
+                            const sent = sentRequestIds.has(r.user.id);
+                            return (
+                              <View key={r.user.id} style={[styles.friendRow, added && styles.friendRowSelected]}>
+                                <View style={[styles.avatarSmall, added && styles.avatarSmallSelected]}>
+                                  <Text style={styles.avatarSmallText}>{initials(r.user.displayName)}</Text>
+                                </View>
+                                <Text style={styles.friendName} numberOfLines={1}>{r.user.displayName}</Text>
+                                {added ? (
+                                  <View style={[styles.checkbox, styles.checkboxSelected]}>
+                                    <Ionicons name="checkmark" size={14} color="#fff" />
+                                  </View>
+                                ) : (
+                                  <Pressable
+                                    style={styles.addFromSearchBtn}
+                                    onPress={() => handleAddFromSearch(r)}
+                                  >
+                                    <Text style={styles.addFromSearchBtnText}>{sent ? "Added" : "Add"}</Text>
+                                  </Pressable>
+                                )}
+                              </View>
+                            );
+                          })}
+                        </View>
+                      ) : searched ? (
+                        <Text style={{ color: colors.textMuted, fontSize: 13, textAlign: "center" }}>No users found.</Text>
+                      ) : null}
+                    </>
                   )}
                 </View>
               )}
@@ -450,7 +537,7 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
               {step === 3 && (
                 <View style={styles.stepContent}>
                   <Text style={styles.stepTitle}>Configure Split</Text>
-                  <Text style={styles.stepSubtitle}>${billAmount.toFixed(2)} among {participants.length} people</Text>
+                  <Text style={styles.stepSubtitle}>${billAmount.toFixed(2)} among {participants.length} {participants.length === 1 ? "person" : "people"}</Text>
 
                   <View style={styles.segmentedControl}>
                     {(["even", "custom"] as const).map((t) => (
@@ -867,6 +954,26 @@ const styles = StyleSheet.create({
     paddingBottom: 24, backgroundColor: "#000",
   },
   bottomBar: { paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.background },
+  inviteLinkRow: {
+    flexDirection: "row", alignItems: "center", gap: 12, padding: 14,
+    borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.surface, marginTop: 10,
+  },
+  inviteLinkRowActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  inviteLinkTitle: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
+  inviteLinkSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  searchRow: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: colors.surface, borderRadius: 14,
+    borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14,
+  },
+  searchInput: {
+    flex: 1, fontSize: 16, color: colors.textPrimary, paddingVertical: 14,
+  },
+  addFromSearchBtn: {
+    backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10,
+  },
+  addFromSearchBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
   cta: {
     backgroundColor: colors.primary, paddingVertical: 16,
     borderRadius: 16, alignItems: "center",

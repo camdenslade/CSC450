@@ -1,8 +1,5 @@
 // apps/api/src/secrets/secrets.service.ts
 
-// ---------------------------------------------------------
-// DO NOT TOUCH THIS FILE UNLESS YOU KNOW WHAT YOU ARE DOING
-// ---------------------------------------------------------
 import { Injectable, Logger } from '@nestjs/common';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 

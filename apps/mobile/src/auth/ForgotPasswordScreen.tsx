@@ -44,7 +44,7 @@ export function ForgotPasswordScreen({ onBack }: Props) {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={{ flex: 1, justifyContent: "center", paddingHorizontal: 24 }}>
           <Pressable onPress={onBack} style={{ marginBottom: 32 }}>
-            <Text style={{ fontSize: 16, color: c.primary, fontWeight: "600" }}>← Back</Text>
+            <Text style={{ fontSize: 16, color: c.primary, fontWeight: "600" }}>‹ Back</Text>
           </Pressable>
 
           <Text style={{ fontSize: 26, fontWeight: "800", color: c.textPrimary, letterSpacing: -0.5, marginBottom: 8 }}>

@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, SectionList, Pressable, RefreshControl } from "
 import { AnimatedPressable } from "../../shared/AnimatedPressable";
 import { SkeletonCard } from "../../shared/SkeletonCard";
 import { EmptyIllustration } from "../../shared/EmptyIllustration";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useColors } from "../../theme/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { Layout } from "../../shared/Layout";
@@ -16,6 +16,7 @@ type TabsListScreenProps = {
   onTabPress?: (tab: TabKey) => void;
   onViewTabDetail?: (tabId: string) => void;
   onCreateTab?: () => void;
+  isVisible?: boolean;
 };
 
 function formatDate(iso: string): string {
@@ -27,7 +28,7 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export function TabsListScreen({ onTabPress, onViewTabDetail, onCreateTab }: TabsListScreenProps) {
+export function TabsListScreen({ onTabPress, onViewTabDetail, onCreateTab, isVisible }: TabsListScreenProps) {
   const { userId } = useAuth();
   const { bills, refreshBills } = useData();
   const c = useColors();
@@ -38,11 +39,17 @@ export function TabsListScreen({ onTabPress, onViewTabDetail, onCreateTab }: Tab
     setRefreshing(false);
   }, [refreshBills]);
 
+  useEffect(() => {
+    if (isVisible) refreshBills().catch(() => {});
+  }, [isVisible]);
+
   const openBills = bills.filter((b) => b.status === "open");
-  const settledBills = bills.filter((b) => b.status !== "open");
+  const settledBills = bills.filter((b) => b.status === "settled");
+  const cancelledBills = bills.filter((b) => b.status === "cancelled");
   const sections = [
     { title: "Open", data: openBills },
     { title: "Settled", data: settledBills },
+    { title: "Cancelled", data: cancelledBills },
   ].filter((s) => s.data.length > 0);
 
   function myShare(bill: ApiBill): number {
@@ -67,9 +74,17 @@ export function TabsListScreen({ onTabPress, onViewTabDetail, onCreateTab }: Tab
           </View>
           <View style={styles.cardRight}>
             <Text style={styles.cardTotal}>${(item.totalCents / 100).toFixed(2)}</Text>
-            <View style={[styles.badge, isOpen ? styles.badgeOpen : styles.badgeSettled]}>
-              <Text style={[styles.badgeText, isOpen ? styles.badgeTextOpen : styles.badgeTextSettled]}>
-                {isOpen ? "Open" : "Settled"}
+            <View style={[
+              styles.badge,
+              item.status === "open" ? styles.badgeOpen :
+              item.status === "cancelled" ? styles.badgeCancelled : styles.badgeSettled,
+            ]}>
+              <Text style={[
+                styles.badgeText,
+                item.status === "open" ? styles.badgeTextOpen :
+                item.status === "cancelled" ? styles.badgeTextCancelled : styles.badgeTextSettled,
+              ]}>
+                {item.status === "open" ? "Open" : item.status === "cancelled" ? "Cancelled" : "Settled"}
               </Text>
             </View>
           </View>
@@ -184,18 +199,20 @@ const styles = StyleSheet.create({
   cardRight: { alignItems: "flex-end", gap: 6 },
   cardTotal: { fontSize: 18, fontWeight: "800", color: colors.textPrimary },
   badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
-  badgeOpen: { backgroundColor: colors.warning + "20" },
+  badgeOpen: { backgroundColor: colors.primaryLight },
   badgeSettled: { backgroundColor: colors.primaryLight },
+  badgeCancelled: { backgroundColor: colors.surfaceSecondary },
   badgeText: { fontSize: 11, fontWeight: "700" },
-  badgeTextOpen: { color: colors.warning },
+  badgeTextOpen: { color: colors.primary },
   badgeTextSettled: { color: colors.primaryDark },
+  badgeTextCancelled: { color: colors.textMuted },
   cardFooter: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   footerChip: {
     flexDirection: "row", alignItems: "center", gap: 4,
     backgroundColor: colors.surfaceSecondary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
   },
-  footerChipWarning: { backgroundColor: colors.warning + "15" },
+  footerChipWarning: { backgroundColor: colors.primaryLight },
   footerChipLabel: { fontSize: 12, color: colors.textMuted },
   footerChipValue: { fontSize: 12, fontWeight: "700", color: colors.textSecondary },
-  footerChipWarningText: { fontSize: 12, fontWeight: "600", color: colors.warning },
+  footerChipWarningText: { fontSize: 12, fontWeight: "600", color: colors.primary },
 });

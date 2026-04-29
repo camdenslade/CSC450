@@ -1,5 +1,5 @@
 // apps/mobile/src/screens/groups/CreateGroupFlow.tsx
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import {
   ActivityIndicator, Alert, Animated, FlatList, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View,
@@ -9,6 +9,8 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Background } from "../../shared/Background";
 import { colors } from "../../theme/colors";
 import { useAuth } from "../../auth/AuthContext";
+import { useData } from "../../store/DataContext";
+import { ApiFriend } from "../../api/client";
 
 type Props = {
   onBack: () => void;
@@ -20,12 +22,18 @@ type SearchResult = {
   displayName: string;
 };
 
-function initials(name: string) {
-  return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+function initials(name: string | null | undefined) {
+  if (!name) return "?";
+  return name.split(" ").map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+}
+
+function otherUser(friend: ApiFriend, myUserId: string) {
+  return friend.requesterId === myUserId ? friend.recipient : friend.requester;
 }
 
 export function CreateGroupFlow({ onBack, onComplete }: Props) {
-  const { apiClient } = useAuth();
+  const { apiClient, userId } = useAuth();
+  const { friends } = useData();
 
   const [step, setStep] = useState<"name" | "members">("name");
   const stepAnim = useRef(new Animated.Value(1)).current;
@@ -177,7 +185,35 @@ export function CreateGroupFlow({ onBack, onComplete }: Props) {
                 showsVerticalScrollIndicator={false}
               >
                 <Text style={styles.stepTitle}>Add members</Text>
-                <Text style={styles.stepSubtitle}>Search for TabUp users to add to "{groupName}"</Text>
+                <Text style={styles.stepSubtitle}>Add friends or search for other users</Text>
+
+                {/* Friends list */}
+                {friends.length > 0 && (
+                  <View style={styles.resultsList}>
+                    {friends.map((f) => {
+                      const u = otherUser(f, userId!);
+                      const sr: SearchResult = { id: u.id, displayName: u.displayName };
+                      const selected = selectedMembers.some((m) => m.id === u.id);
+                      return (
+                        <Pressable
+                          key={f.id}
+                          style={[styles.resultCard, selected && styles.resultCardSelected]}
+                          onPress={() => toggleMember(sr)}
+                        >
+                          <View style={[styles.avatarSmall, selected && styles.avatarSmallSelected]}>
+                            <Text style={styles.avatarSmallText}>{initials(u.displayName)}</Text>
+                          </View>
+                          <Text style={styles.resultName} numberOfLines={1}>{u.displayName}</Text>
+                          <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+                            {selected && <Text style={styles.checkmark}>✓</Text>}
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
+
+                <Text style={[styles.stepSubtitle, { marginTop: 4 }]}>Search for more users</Text>
 
                 {/* Selected chips */}
                 {selectedMembers.length > 0 && (

@@ -1,11 +1,10 @@
 // Global data store — fetched once at login, shared across all tabs.
 // Split into four contexts so a change to bills doesn't re-render
 // components that only consume profile or friends data.
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode, useMemo } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useCallback, ReactNode, useMemo } from "react";
+import { AppState, AppStateStatus } from "react-native";
 import { useAuth } from "../auth/AuthContext";
 import { ApiBill, ApiFriend, ApiLedgerPage, ApiUser, ApiPaymentHandle } from "../api/client";
-
-// ── Profile ────────────────────────────────────────────────────────────────
 
 interface ProfileStore {
   profile: ApiUser | null;
@@ -15,8 +14,6 @@ interface ProfileStore {
 
 const ProfileContext = createContext<ProfileStore | null>(null);
 
-// ── Bills ──────────────────────────────────────────────────────────────────
-
 interface BillsStore {
   bills: ApiBill[];
   refreshBills: () => Promise<void>;
@@ -24,8 +21,6 @@ interface BillsStore {
 }
 
 const BillsContext = createContext<BillsStore | null>(null);
-
-// ── Friends ────────────────────────────────────────────────────────────────
 
 interface FriendsStore {
   friends: ApiFriend[];
@@ -35,8 +30,6 @@ interface FriendsStore {
 
 const FriendsContext = createContext<FriendsStore | null>(null);
 
-// ── Ledger ─────────────────────────────────────────────────────────────────
-
 interface LedgerStore {
   ledger: ApiLedgerPage | null;
   refreshLedger: () => Promise<void>;
@@ -44,11 +37,7 @@ interface LedgerStore {
 
 const LedgerContext = createContext<LedgerStore | null>(null);
 
-// ── Ready ──────────────────────────────────────────────────────────────────
-
 const ReadyContext = createContext<boolean>(false);
-
-// ── Provider ───────────────────────────────────────────────────────────────
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const { apiClient, userId } = useAuth();
@@ -108,6 +97,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
       .finally(() => setReady(true));
   }, [userId]);
 
+  // Refresh bills and ledger when app returns to foreground so new tabs appear without restarting.
+  const appState = useRef<AppStateStatus>(AppState.currentState);
+  useEffect(() => {
+    if (!userId) return;
+    const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
+      if (appState.current.match(/inactive|background/) && next === "active") {
+        Promise.all([
+          apiClient.get<ApiBill[]>("/tabs").then(setBills),
+          apiClient.get<ApiLedgerPage>("/ledger?limit=10").then(setLedger),
+        ]).catch(() => {});
+      }
+      appState.current = next;
+    });
+    return () => sub.remove();
+  }, [userId, apiClient]);
+
   const profileValue  = useMemo(() => ({ profile, handles, refreshProfile }),             [profile, handles, refreshProfile]);
   const billsValue    = useMemo(() => ({ bills, refreshBills, updateBill }),              [bills, refreshBills, updateBill]);
   const friendsValue  = useMemo(() => ({ friends, friendRequests, refreshFriends }),      [friends, friendRequests, refreshFriends]);
@@ -128,7 +133,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// ── Hooks ──────────────────────────────────────────────────────────────────
+
 
 export function useData() {
   const profile  = useContext(ProfileContext);

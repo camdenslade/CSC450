@@ -1,6 +1,9 @@
 // apps/mobile/src/App.tsx
 import { useState, useEffect } from "react";
 import { View, Linking, Alert } from "react-native";
+import * as SplashScreen from "expo-splash-screen";
+
+SplashScreen.preventAutoHideAsync();
 import { StatusBar } from "expo-status-bar";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { DataProvider, useData } from "./store/DataContext";
@@ -91,6 +94,10 @@ function MainApp() {
     return () => sub.remove();
   }, []);
 
+  useEffect(() => {
+    if (!loading && (ready || !user)) SplashScreen.hideAsync();
+  }, [loading, ready, user]);
+
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: c.background }}>
@@ -178,6 +185,7 @@ function MainApp() {
             onTabPress={handleTabPress}
             onViewTabDetail={handleViewTabDetail}
             onCreateTab={handleCreateTab}
+            isVisible={activeTab === "Tabs"}
           />
         </View>
         <View style={{ flex: 1, opacity: activeTab === "Profile" ? 1 : 0, position: "absolute", width: "100%", height: "100%", pointerEvents: activeTab === "Profile" ? "auto" : "none" }}>

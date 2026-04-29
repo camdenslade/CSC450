@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { View, Text, StyleSheet, Pressable, Alert, ScrollView, RefreshControl } from "react-native";
+import { View, Text, StyleSheet, Pressable, Alert, ScrollView, RefreshControl, Modal } from "react-native";
 import { SkeletonCard } from "../../shared/SkeletonCard";
 import { EmptyIllustration } from "../../shared/EmptyIllustration";
 import { useColors } from "../../theme/colors";
@@ -10,6 +10,7 @@ import { TabKey } from "../../shared/NavBar";
 import { useAuth } from "../../auth/AuthContext";
 import { useData } from "../../store/DataContext";
 import { ApiFriend } from "../../api/client";
+import { PlatformIcon } from "../../shared/PlatformIcon";
 
 type FriendsListScreenProps = {
   onTabPress?: (tab: TabKey) => void;
@@ -25,11 +26,15 @@ function initials(name: string) {
   return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 }
 
+const PLATFORM_LABELS: Record<string, string> = { paypal: "PayPal", venmo: "Venmo", cashapp: "Cash App" };
+const ALL_PLATFORMS = ["venmo", "cashapp", "paypal"] as const;
+
 export function FriendsListScreen({ onTabPress, onAddFriend, onCreateTab }: FriendsListScreenProps) {
   const { apiClient, userId } = useAuth();
   const { friends, friendRequests, refreshFriends } = useData();
   const c = useColors();
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedFriend, setSelectedFriend] = useState<ApiFriend | null>(null);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refreshFriends().catch(() => {});
@@ -87,6 +92,7 @@ export function FriendsListScreen({ onTabPress, onAddFriend, onCreateTab }: Frie
             <Text style={styles.addBtnText}>+ Add</Text>
           </Pressable>
         </View>
+        <View style={styles.headerSpacer} />
 
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -111,13 +117,14 @@ export function FriendsListScreen({ onTabPress, onAddFriend, onCreateTab }: Frie
                         <View style={styles.avatarWrap}>
                           <Text style={styles.avatarText}>{initials(u.displayName)}</Text>
                         </View>
-                        <Text style={styles.friendName}>{u.displayName}</Text>
+                        <Text style={[styles.friendName, { flex: 1 }]} numberOfLines={1}>{u.displayName}</Text>
                         <View style={styles.requestBtns}>
                           <Pressable
                             style={({ pressed }) => [styles.acceptBtn, pressed && { opacity: 0.8 }]}
                             onPress={() => handleAccept(req)}
                           >
                             <Ionicons name="checkmark" size={16} color="#fff" />
+                            <Text style={styles.acceptBtnLabel}>Accept</Text>
                           </Pressable>
                           <Pressable
                             style={({ pressed }) => [styles.declineBtn, pressed && { opacity: 0.8 }]}
@@ -155,15 +162,30 @@ export function FriendsListScreen({ onTabPress, onAddFriend, onCreateTab }: Frie
                       <Pressable
                         key={friend.id}
                         style={[styles.friendRow, i > 0 && styles.rowBorder]}
-                        onLongPress={() => handleRemove(friend)}
+                        onPress={() => setSelectedFriend(friend)}
                       >
                         <View style={styles.avatarWrap}>
                           <Text style={styles.avatarText}>{initials(u.displayName)}</Text>
                         </View>
                         <View style={styles.friendInfo}>
-                          <Text style={styles.friendName}>{u.displayName}</Text>
-                          <Text style={styles.friendSub}>Hold to remove</Text>
+                          <Text style={styles.friendName} numberOfLines={1}>{u.displayName}</Text>
+                          {u.defaultPlatform ? (
+                            <View style={styles.preferredRow}>
+                              <PlatformIcon platform={u.defaultPlatform as "venmo" | "paypal" | "cashapp"} size={14} />
+                              <Text style={styles.friendSub}>{PLATFORM_LABELS[u.defaultPlatform]}</Text>
+                            </View>
+                          ) : (
+                            <Text style={styles.friendSub}>No preferred platform</Text>
+                          )}
                         </View>
+                        {(u.paymentHandles ?? []).length > 0 && (
+                          <View style={styles.platformIcons}>
+                            {(u.paymentHandles ?? []).map((h) => (
+                              <PlatformIcon key={h.platform} platform={h.platform} size={22} />
+                            ))}
+                          </View>
+                        )}
+                        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
                       </Pressable>
                     );
                   })}
@@ -172,6 +194,41 @@ export function FriendsListScreen({ onTabPress, onAddFriend, onCreateTab }: Frie
             </View>
         </ScrollView>
       </View>
+      {/* Friend profile sheet */}
+      <Modal visible={!!selectedFriend} transparent animationType="slide">
+        <Pressable style={styles.sheetBackdrop} onPress={() => setSelectedFriend(null)}>
+          <Pressable style={[styles.sheet, { backgroundColor: c.surface }]} onPress={() => {}}>
+            {selectedFriend && (() => {
+              const u = otherUser(selectedFriend, userId!);
+              return (
+                <>
+                  <View style={styles.sheetHandle} />
+                  <View style={styles.sheetAvatar}>
+                    <Text style={styles.sheetAvatarText}>{initials(u.displayName)}</Text>
+                  </View>
+                  <Text style={[styles.sheetName, { color: c.textPrimary }]}>{u.displayName}</Text>
+                  {u.defaultPlatform ? (
+                    <View style={styles.sheetPlatformRow}>
+                      <PlatformIcon platform={u.defaultPlatform as "venmo" | "paypal" | "cashapp"} size={26} />
+                      <Text style={[styles.sheetPlatform, { color: c.textPrimary }]}>
+                        {PLATFORM_LABELS[u.defaultPlatform]}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {u.email ? <Text style={[styles.sheetMeta, { color: c.textMuted }]}>{u.email}</Text> : null}
+                  {u.phone ? <Text style={[styles.sheetMeta, { color: c.textMuted }]}>{u.phone}</Text> : null}
+                  <Pressable
+                    style={styles.removeBtn}
+                    onPress={() => { setSelectedFriend(null); handleRemove(selectedFriend); }}
+                  >
+                    <Text style={styles.removeBtnText}>Remove Friend</Text>
+                  </Pressable>
+                </>
+              );
+            })()}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Layout>
   );
 }
@@ -182,6 +239,7 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 16, paddingBottom: 8,
   },
+  headerSpacer: { height: 20 },
   title: { fontSize: 28, fontWeight: "800", color: colors.textPrimary, letterSpacing: -0.5 },
   addBtn: { backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
   addBtnPressed: { backgroundColor: colors.primaryDark },
@@ -209,11 +267,15 @@ const styles = StyleSheet.create({
   friendInfo: { flex: 1 },
   friendName: { fontSize: 16, fontWeight: "600", color: colors.textPrimary },
   friendSub: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  preferredRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
+  platformIcons: { flexDirection: "row", gap: 4, marginRight: 8 },
   requestBtns: { flexDirection: "row", gap: 8 },
   acceptBtn: {
-    width: 36, height: 36, borderRadius: 12, backgroundColor: colors.primaryLight,
-    alignItems: "center", justifyContent: "center",
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
+    backgroundColor: colors.primary,
   },
+  acceptBtnLabel: { fontSize: 13, fontWeight: "700", color: "#fff" },
   acceptBtnText: { fontSize: 16, color: colors.primaryDark, fontWeight: "700" },
   declineBtn: {
     width: 36, height: 36, borderRadius: 12, backgroundColor: colors.danger + "15",
@@ -226,4 +288,31 @@ const styles = StyleSheet.create({
   emptySub: { fontSize: 14, color: colors.textMuted, textAlign: "center", marginBottom: 20 },
   emptyBtn: { backgroundColor: colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14 },
   emptyBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+
+  sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  sheet: {
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, paddingBottom: 48, alignItems: "center", gap: 8,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: 16 },
+  sheetAvatar: {
+    width: 72, height: 72, borderRadius: 22, backgroundColor: colors.primaryLight,
+    alignItems: "center", justifyContent: "center", marginBottom: 4,
+  },
+  sheetAvatarText: { fontSize: 24, fontWeight: "800", color: colors.primaryDark },
+  sheetName: { fontSize: 22, fontWeight: "800", letterSpacing: -0.5 },
+  sheetPlatformRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderRadius: 12, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  sheetPlatform: { fontSize: 14, fontWeight: "700", color: colors.textSecondary },
+  sheetMeta: { fontSize: 13 },
+  removeBtn: {
+    marginTop: 16, paddingVertical: 14, paddingHorizontal: 32,
+    borderRadius: 14, borderWidth: 1.5, borderColor: colors.danger, alignItems: "center", width: "100%",
+  },
+  removeBtnText: { fontSize: 15, fontWeight: "600", color: colors.danger },
 });

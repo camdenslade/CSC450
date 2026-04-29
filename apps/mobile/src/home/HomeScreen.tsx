@@ -1,5 +1,5 @@
 import { StyleSheet, ScrollView, RefreshControl, View, Text, Pressable } from "react-native";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Layout } from "../shared/Layout";
 import { BalanceCard } from "./components/BalanceCard";
 import { PrimaryActions } from "./components/PrimaryActions";
@@ -9,9 +9,10 @@ import { MetricsRow, Metric } from "./components/MetricsRow";
 import { NextTabCard, NextTab } from "./components/NextTabCard";
 import { ActivityList, ActivityItem } from "./components/ActivityList";
 import { Section } from "./components/Section";
-import { ApiBill } from "../api/client";
+import { ApiBill, ApiGroup } from "../api/client";
 import { useColors } from "../theme/colors";
 import { useBills, useFriends, useLedger } from "../store/DataContext";
+import { useAuth } from "../auth/AuthContext";
 
 type HomeScreenProps = {
   onTabPress?: (tab: TabKey) => void;
@@ -54,16 +55,29 @@ function billToNextTab(bill: ApiBill): NextTab {
   };
 }
 
+function groupInitials(name: string) {
+  return name.split(" ").map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+}
+
 export function HomeScreen({ onTabPress, onCreateTab, onViewTabs, onViewTabDetail, onViewLedger, onViewGroups }: HomeScreenProps) {
   const { bills, refreshBills } = useBills();
   const { friendRequests, refreshFriends } = useFriends();
   const { ledger, refreshLedger } = useLedger();
+  const { apiClient } = useAuth();
   const c = useColors();
   const [refreshing, setRefreshing] = useState(false);
+  const [groups, setGroups] = useState<ApiGroup[]>([]);
+
+  useEffect(() => {
+    apiClient.get<ApiGroup[]>("/groups").then(setGroups).catch(() => {});
+  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refreshBills(), refreshFriends(), refreshLedger()]).catch(() => {});
+    await Promise.all([
+      refreshBills(), refreshFriends(), refreshLedger(),
+      apiClient.get<ApiGroup[]>("/groups").then(setGroups).catch(() => {}),
+    ]);
     setRefreshing(false);
   }, [refreshBills, refreshFriends, refreshLedger]);
 
@@ -141,13 +155,40 @@ export function HomeScreen({ onTabPress, onCreateTab, onViewTabs, onViewTabDetai
           )}
 
           <Section title="Groups" actionLabel="View all" onActionPress={onViewGroups}>
-            <Pressable
-              style={({ pressed }) => [styles.groupsTeaser, { backgroundColor: pressed ? c.surfaceSecondary : c.surface, borderColor: c.border }]}
-              onPress={onViewGroups}
-            >
-              <Text style={[styles.groupsTeaserTitle, { color: c.textPrimary }]}>Split with your crew</Text>
-              <Text style={[styles.groupsTeaserSub, { color: c.textMuted }]}>Create a group to split tabs with recurring friends.</Text>
-            </Pressable>
+            {groups.length === 0 ? (
+              <Pressable
+                style={({ pressed }) => [styles.groupsTeaser, { backgroundColor: pressed ? c.surfaceSecondary : c.surface, borderColor: c.border }]}
+                onPress={onViewGroups}
+              >
+                <Text style={[styles.groupsTeaserTitle, { color: c.textPrimary }]}>Split with your crew</Text>
+                <Text style={[styles.groupsTeaserSub, { color: c.textMuted }]}>Create a group to split tabs with recurring friends.</Text>
+              </Pressable>
+            ) : (
+              <View style={{ gap: 8 }}>
+                {groups.slice(0, 3).map((g) => (
+                  <Pressable
+                    key={g.id}
+                    style={({ pressed }) => [styles.groupCard, { backgroundColor: pressed ? c.surfaceSecondary : c.surface, borderColor: c.border }]}
+                    onPress={() => onViewGroups?.()}
+                  >
+                    <View style={[styles.groupCardAvatar, { backgroundColor: c.primaryLight }]}>
+                      <Text style={[styles.groupCardAvatarText, { color: c.primaryDark }]}>{groupInitials(g.name)}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.groupCardName, { color: c.textPrimary }]}>{g.name}</Text>
+                      <Text style={[styles.groupCardMeta, { color: c.textMuted }]}>
+                        {g.members.length} {g.members.length === 1 ? "member" : "members"}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+                {groups.length > 3 && (
+                  <Pressable onPress={onViewGroups} style={styles.groupsSeeMore}>
+                    <Text style={[styles.groupsSeeMoreText, { color: c.primary }]}>See all {groups.length} groups →</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
           </Section>
         </View>
       </ScrollView>
@@ -161,4 +202,14 @@ const styles = StyleSheet.create({
   groupsTeaser: { borderRadius: 16, padding: 16, borderWidth: 1 },
   groupsTeaserTitle: { fontSize: 15, fontWeight: "700", marginBottom: 4 },
   groupsTeaserSub: { fontSize: 13, lineHeight: 19 },
+  groupCard: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    borderRadius: 14, padding: 14, borderWidth: 1,
+  },
+  groupCardAvatar: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  groupCardAvatarText: { fontSize: 14, fontWeight: "800" },
+  groupCardName: { fontSize: 15, fontWeight: "700" },
+  groupCardMeta: { fontSize: 12, marginTop: 1 },
+  groupsSeeMore: { paddingVertical: 4 },
+  groupsSeeMoreText: { fontSize: 13, fontWeight: "600" },
 });

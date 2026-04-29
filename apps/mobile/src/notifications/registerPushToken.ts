@@ -5,6 +5,7 @@ import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import { Platform } from "react-native";
 import { ApiClient } from "../api/client";
+import { EAS_PROJECT_ID } from "../api/config";
 
 export async function registerPushToken(apiClient: ApiClient): Promise<void> {
   if (!Device.isDevice) return; // simulators can't receive push
@@ -27,7 +28,7 @@ export async function registerPushToken(apiClient: ApiClient): Promise<void> {
     });
   }
 
-  const tokenData = await Notifications.getExpoPushTokenAsync();
+  const tokenData = await Notifications.getExpoPushTokenAsync({ projectId: EAS_PROJECT_ID });
   const platform  = Platform.OS === "ios" ? "ios" : "android";
 
   await apiClient.post("/users/device", { pushToken: tokenData.data, platform }).catch(() => {});

@@ -14,6 +14,7 @@ import { ApiBill, ApiBillParticipant } from "../../api/client";
 import { avatarColor } from "../../shared/avatarColor";
 import { Toast } from "../../shared/Toast";
 import { SwipeToSettle } from "../../shared/SwipeToSettle";
+import { PlatformIcon } from "../../shared/PlatformIcon";
 
 type TabDetailScreenProps = {
   tabId: string;
@@ -27,6 +28,19 @@ const PLATFORM_LABELS: Record<string, string> = {
 
 function initials(name: string) {
   return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+}
+
+function ParticipantAvatar({ name, avatarUrl, size = 38, muted = false }: { name: string; avatarUrl?: string | null; size?: number; muted?: boolean }) {
+  const ac = avatarColor(name);
+  const radius = Math.round(size * 0.32);
+  if (avatarUrl) {
+    return <Image source={{ uri: avatarUrl }} style={{ width: size, height: size, borderRadius: radius, marginRight: 12 }} contentFit="cover" />;
+  }
+  return (
+    <View style={{ width: size, height: size, borderRadius: radius, backgroundColor: muted ? ac.bg + "80" : ac.bg, alignItems: "center", justifyContent: "center", marginRight: 12 }}>
+      <Text style={{ fontSize: Math.round(size * 0.32), fontWeight: "800", color: muted ? ac.text + "99" : ac.text }}>{initials(name)}</Text>
+    </View>
+  );
 }
 
 export function TabDetailScreen({ tabId, onBack, joinedViaLink }: TabDetailScreenProps) {
@@ -119,7 +133,7 @@ export function TabDetailScreen({ tabId, onBack, joinedViaLink }: TabDetailScree
     try {
       const splits = bill.participants.map((p) => ({
         participantId: p.id,
-        shareCents: Math.round(parseFloat(splitAmounts[p.id] || "0") * 100),
+        share: Math.round(parseFloat(splitAmounts[p.id] || "0") * 100),
       }));
       await apiClient.post(`/tabs/${tabId}/split`, { splits });
       setEditingSplits(false);
@@ -205,6 +219,18 @@ export function TabDetailScreen({ tabId, onBack, joinedViaLink }: TabDetailScree
     ]);
   }
 
+  function handleDeleteTab() {
+    Alert.alert("Delete Tab", "Permanently delete this tab and all its data? This cannot be undone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete", style: "destructive", onPress: async () => {
+          try { await apiClient.del(`/tabs/${tabId}/delete`); onBack(); }
+          catch (e: unknown) { Alert.alert("Error", e instanceof Error ? e.message : "Failed."); }
+        },
+      },
+    ]);
+  }
+
   if (loading) {
     return (
       <SafeAreaView style={styles.centered}>
@@ -218,7 +244,7 @@ export function TabDetailScreen({ tabId, onBack, joinedViaLink }: TabDetailScree
       <SafeAreaView style={styles.centered}>
         <Text style={styles.errorText}>{error || "Tab not found."}</Text>
         <Pressable onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>← Back</Text>
+          <Text style={styles.backBtnText}>‹ Back</Text>
         </Pressable>
       </SafeAreaView>
     );
@@ -280,7 +306,7 @@ export function TabDetailScreen({ tabId, onBack, joinedViaLink }: TabDetailScree
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <Pressable onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>← Back</Text>
+          <Text style={styles.backBtnText}>‹ Back</Text>
         </Pressable>
 
         {/* Add friend banner — shown when user joined via a share link */}
@@ -310,11 +336,6 @@ export function TabDetailScreen({ tabId, onBack, joinedViaLink }: TabDetailScree
               {isOpen ? "Collecting" : "Settled"}
             </Text>
           </View>
-          {isOwner && isOpen && (
-            <Pressable onPress={handleShare} style={styles.shareBtn} hitSlop={8}>
-              <Ionicons name="share-outline" size={20} color={colors.primary} />
-            </Pressable>
-          )}
         </View>
         {bill.location ? <Text style={styles.location}>{bill.location}</Text> : null}
 
@@ -382,15 +403,10 @@ export function TabDetailScreen({ tabId, onBack, joinedViaLink }: TabDetailScree
             </View>
             {bill.participants.map((p, i) => {
               const name = p.user?.displayName ?? p.contactName ?? "?";
-              const ac = avatarColor(name);
               return (
               <View key={p.id} style={[styles.splitRow, i > 0 && styles.rowBorder]}>
-                <View style={[styles.participantAvatar, { backgroundColor: ac.bg }]}>
-                  <Text style={[styles.participantAvatarText, { color: ac.text }]}>
-                    {initials(name)}
-                  </Text>
-                </View>
-                <Text style={styles.splitName}>{p.user?.displayName ?? p.contactName ?? "?"}</Text>
+                <ParticipantAvatar name={name} avatarUrl={p.user?.avatarUrl} />
+                <Text style={styles.splitName} numberOfLines={1}>{p.user?.displayName ?? p.contactName ?? "?"}</Text>
                 {editingSplits ? (
                   <View style={styles.splitInputWrap}>
                     <Text style={styles.splitDollar}>$</Text>
@@ -411,29 +427,30 @@ export function TabDetailScreen({ tabId, onBack, joinedViaLink }: TabDetailScree
           </View>
         )}
 
-        {/* "I paid" card for non-owner participant */}
+        {/* "Your Share" card for non-owner participant — shown until paid */}
         {myParticipant && myParticipant.state !== "paid" && isOpen && (
           <View style={[styles.card, { borderColor: colors.primary + "40" }]}>
             <Text style={styles.cardTitle}>Your Share</Text>
             <View style={styles.participantRow}>
-              {(() => { const ac = avatarColor(myParticipant.user?.displayName ?? myParticipant.contactName ?? "?"); return (
-                <View style={[styles.participantAvatar, { backgroundColor: ac.bg }]}>
-                  <Text style={[styles.participantAvatarText, { color: ac.text }]}>
-                    {initials(myParticipant.user?.displayName ?? myParticipant.contactName ?? "?")}
-                  </Text>
-                </View>
-              ); })()}
+              <ParticipantAvatar name={myParticipant.user?.displayName ?? myParticipant.contactName ?? "?"} avatarUrl={myParticipant.user?.avatarUrl} />
               <View style={styles.participantInfo}>
                 <Text style={styles.participantName}>{myParticipant.user?.displayName ?? myParticipant.contactName ?? "You"}</Text>
-                <Text style={styles.participantMeta}>{myParticipant.state === "pending" ? "Pending" : "Requested"}</Text>
+                <View style={styles.participantMetaRow}>
+                  <PlatformIcon platform={myParticipant.platform} size={14} />
+                  <Text style={styles.participantMeta}>{myParticipant.state === "pending" ? "Pending" : "Requested"}</Text>
+                </View>
               </View>
-              <View style={styles.participantRight}>
-                <Text style={styles.participantAmount}>${(myParticipant.shareCents / 100).toFixed(2)}</Text>
-                <Pressable style={styles.settleBtn} onPress={handleSelfSettle}>
-                  <Ionicons name="checkmark" size={14} color="#fff" />
-                  <Text style={styles.settleBtnText}>I paid</Text>
-                </Pressable>
-              </View>
+              <Text style={styles.participantAmount}>${(myParticipant.shareCents / 100).toFixed(2)}</Text>
+            </View>
+            <View style={styles.myShareActions}>
+              <Pressable style={styles.payBtn} onPress={() => handleRequestPayment(myParticipant)}>
+                <PlatformIcon platform={myParticipant.platform} size={18} />
+                <Text style={styles.payBtnText}>Pay via {PLATFORM_LABELS[myParticipant.platform]}</Text>
+              </Pressable>
+              <Pressable style={styles.iPaidBtn} onPress={handleSelfSettle}>
+                <Ionicons name="checkmark" size={14} color={colors.primary} />
+                <Text style={styles.iPaidBtnText}>I already paid</Text>
+              </Pressable>
             </View>
           </View>
         )}
@@ -444,44 +461,43 @@ export function TabDetailScreen({ tabId, onBack, joinedViaLink }: TabDetailScree
             <Text style={styles.cardTitle}>Awaiting Payment</Text>
             {pending.map((p, i) => {
               const name = p.user?.displayName ?? p.contactName ?? "?";
-              const ac = avatarColor(name);
               return (
               <SwipeToSettle key={p.id} onSettle={() => handleSettle(p)} enabled={isOwner && isOpen}>
-              <View style={[styles.participantRow, i > 0 && styles.rowBorder]}>
-                <View style={[styles.participantAvatar, { backgroundColor: ac.bg }]}>
-                  <Text style={[styles.participantAvatarText, { color: ac.text }]}>
-                    {initials(name)}
-                  </Text>
-                </View>
-                <View style={styles.participantInfo}>
-                  <Text style={styles.participantName}>{name === "?" ? "Unknown" : name}</Text>
-                  <Text style={styles.participantMeta}>{PLATFORM_LABELS[p.platform]} · {p.state}</Text>
-                </View>
-                <View style={styles.participantRight}>
-                  <Text style={styles.participantAmount}>${(p.shareCents / 100).toFixed(2)}</Text>
-                  {isOwner && isOpen && (
-                    <View style={styles.actionBtns}>
-                      {p.userId && (
-                        <Pressable style={styles.remindBtn} onPress={() => handleRemind(p)}>
-                          <Ionicons name="notifications-outline" size={13} color={colors.warning} />
-                          <Text style={styles.remindBtnText}>Remind</Text>
-                        </Pressable>
-                      )}
-                      <Pressable
-                        style={styles.requestBtn}
-                        onPress={() => handleRequestPayment(p)}
-                        onLongPress={() => p.paymentLink && handleCopyLink(p.paymentLink)}
-                        delayLongPress={400}
-                      >
-                        <Text style={styles.requestBtnText}>Request</Text>
-                      </Pressable>
-                      <Pressable style={styles.settleBtn} onPress={() => handleSettle(p)}>
-                        <Ionicons name="checkmark" size={14} color="#fff" />
-                        <Text style={styles.settleBtnText}>Paid</Text>
-                      </Pressable>
+              <View style={[styles.pendingItem, i > 0 && styles.rowBorder]}>
+                <View style={styles.participantRow}>
+                  <ParticipantAvatar name={name} avatarUrl={p.user?.avatarUrl} />
+                  <View style={styles.participantInfo}>
+                    <Text style={styles.participantName} numberOfLines={1}>{name === "?" ? "Unknown" : name}</Text>
+                    <View style={styles.participantMetaRow}>
+                      <PlatformIcon platform={p.platform} size={14} />
+                      <Text style={styles.participantMeta}>{p.state}</Text>
                     </View>
-                  )}
+                  </View>
+                  <Text style={styles.participantAmount}>${(p.shareCents / 100).toFixed(2)}</Text>
                 </View>
+                {isOwner && isOpen && (
+                  <View style={styles.actionBtns}>
+                    <Pressable
+                      style={styles.requestBtn}
+                      onPress={() => handleRequestPayment(p)}
+                      onLongPress={() => p.paymentLink && handleCopyLink(p.paymentLink)}
+                      delayLongPress={400}
+                    >
+                      <PlatformIcon platform={p.platform} size={14} />
+                      <Text style={styles.requestBtnText}>Request</Text>
+                    </Pressable>
+                    {p.userId && (
+                      <Pressable style={styles.remindBtn} onPress={() => handleRemind(p)}>
+                        <Ionicons name="notifications-outline" size={13} color={colors.primary} />
+                        <Text style={styles.remindBtnText}>Remind</Text>
+                      </Pressable>
+                    )}
+                    <Pressable style={styles.settleBtn} onPress={() => handleSettle(p)}>
+                      <Ionicons name="checkmark" size={14} color="#fff" />
+                      <Text style={styles.settleBtnText}>Paid</Text>
+                    </Pressable>
+                  </View>
+                )}
               </View>
               </SwipeToSettle>
               );
@@ -495,14 +511,9 @@ export function TabDetailScreen({ tabId, onBack, joinedViaLink }: TabDetailScree
             <Text style={styles.cardTitle}>Settled</Text>
             {settled.map((p, i) => {
               const name = p.user?.displayName ?? p.contactName ?? "?";
-              const ac = avatarColor(name);
               return (
               <View key={p.id} style={[styles.participantRow, i > 0 && styles.rowBorder, styles.rowMuted]}>
-                <View style={[styles.participantAvatar, { backgroundColor: ac.bg + "80" }]}>
-                  <Text style={[styles.participantAvatarText, { color: ac.text + "99" }]}>
-                    {initials(name)}
-                  </Text>
-                </View>
+                <ParticipantAvatar name={name} avatarUrl={p.user?.avatarUrl} muted />
                 <Text style={[styles.participantName, styles.textMuted]}>{name === "?" ? "Unknown" : name}</Text>
                 <Text style={[styles.participantAmount, { color: colors.success }]}>${(p.shareCents / 100).toFixed(2)}</Text>
               </View>
@@ -514,6 +525,11 @@ export function TabDetailScreen({ tabId, onBack, joinedViaLink }: TabDetailScree
         {isOwner && isOpen && (
           <Pressable style={styles.cancelBtn} onPress={handleCancelTab}>
             <Text style={styles.cancelBtnText}>Cancel Tab</Text>
+          </Pressable>
+        )}
+        {isOwner && (
+          <Pressable style={styles.deleteBtn} onPress={handleDeleteTab}>
+            <Text style={styles.deleteBtnText}>Delete Tab</Text>
           </Pressable>
         )}
       </ScrollView>
@@ -545,7 +561,7 @@ function ReceiptThumb({ uri }: { uri: string }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background, padding: 24 },
-  content: { padding: 16, paddingBottom: 60 },
+  content: { padding: 16, paddingTop: 52, paddingBottom: 60 },
   backBtn: { marginBottom: 16 },
   backBtnText: { fontSize: 16, color: colors.primary, fontWeight: "600" },
   titleRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 },
@@ -563,10 +579,10 @@ const styles = StyleSheet.create({
   friendBannerBtn: { backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
   friendBannerBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
   statusBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
-  statusOpen: { backgroundColor: colors.warning + "20" },
+  statusOpen: { backgroundColor: colors.primaryLight },
   statusSettled: { backgroundColor: colors.primaryLight },
   statusText: { fontSize: 12, fontWeight: "700" },
-  statusTextOpen: { color: colors.warning },
+  statusTextOpen: { color: colors.primary },
   statusTextSettled: { color: colors.primaryDark },
   errorText: { color: colors.error, marginBottom: 16 },
   heroCard: {
@@ -603,7 +619,8 @@ const styles = StyleSheet.create({
   splitInput: { fontSize: 15, fontWeight: "700", color: colors.textPrimary, minWidth: 60 },
   rowBorder: { borderTopWidth: 1, borderTopColor: colors.divider },
   rowMuted: { opacity: 0.6 },
-  participantRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12 },
+  pendingItem: { paddingVertical: 12 },
+  participantRow: { flexDirection: "row", alignItems: "center" },
   participantAvatar: {
     width: 38, height: 38, borderRadius: 12, backgroundColor: colors.primaryLight,
     alignItems: "center", justifyContent: "center", marginRight: 12,
@@ -613,12 +630,25 @@ const styles = StyleSheet.create({
   participantInfo: { flex: 1 },
   participantName: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
   textMuted: { color: colors.textMuted },
-  participantMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  participantMetaRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2 },
+  participantMeta: { fontSize: 12, color: colors.textMuted },
   participantRight: { alignItems: "flex-end", gap: 8 },
   participantAmount: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
-  actionBtns: { flexDirection: "row", gap: 6 },
-  remindBtn: { backgroundColor: colors.warning + "18", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 3 },
-  remindBtnText: { fontSize: 12, fontWeight: "700", color: colors.warning },
+  myShareActions: { flexDirection: "row", gap: 8, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.divider },
+  payBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    backgroundColor: colors.primary, paddingVertical: 12, borderRadius: 12,
+  },
+  payBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  iPaidBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12,
+    borderWidth: 1.5, borderColor: colors.primary,
+  },
+  iPaidBtnText: { fontSize: 13, fontWeight: "700", color: colors.primary },
+  actionBtns: { flexDirection: "row", gap: 6, marginTop: 10 },
+  remindBtn: { backgroundColor: colors.primaryLight, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 3 },
+  remindBtnText: { fontSize: 12, fontWeight: "700", color: colors.primary },
   remindBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
   remindSheet: {
     backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
@@ -635,7 +665,7 @@ const styles = StyleSheet.create({
   remindOptionText: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
   remindCancel: { paddingVertical: 14, alignItems: "center", marginTop: 4 },
   remindCancelText: { fontSize: 15, fontWeight: "600", color: colors.textMuted },
-  requestBtn: { backgroundColor: colors.primaryLight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 },
+  requestBtn: { backgroundColor: colors.primaryLight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 5 },
   requestBtnText: { fontSize: 12, fontWeight: "700", color: colors.primaryDark },
   settleBtn: { backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 4 },
   settleBtnText: { fontSize: 12, fontWeight: "700", color: "#fff" },
@@ -646,6 +676,8 @@ const styles = StyleSheet.create({
   celebrationText: { fontSize: 28, fontWeight: "800", color: colors.primary },
   cancelBtn: { marginTop: 8, paddingVertical: 14, borderRadius: 14, alignItems: "center", borderWidth: 1.5, borderColor: colors.danger },
   cancelBtnText: { fontSize: 15, fontWeight: "600", color: colors.danger },
+  deleteBtn: { marginTop: 8, paddingVertical: 14, borderRadius: 14, alignItems: "center", backgroundColor: colors.danger },
+  deleteBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
   disabled: { opacity: 0.6 },
   receiptThumb: {
     marginBottom: 16, borderRadius: 14, overflow: "hidden",

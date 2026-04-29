@@ -4,12 +4,15 @@ import {
   ActivityIndicator, Alert, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View, Modal,
 } from "react-native";
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Background } from "../../shared/Background";
 import { colors } from "../../theme/colors";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiGroup, ApiGroupMember } from "../../api/client";
+import { avatarColor } from "../../shared/avatarColor";
 
 type Props = {
   groupId: string;
@@ -18,8 +21,22 @@ type Props = {
 
 type SearchResult = { id: string; displayName: string };
 
-function initials(name: string) {
-  return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+function initials(name: string | null | undefined) {
+  if (!name) return "?";
+  return name.split(" ").map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+}
+
+function MemberAvatar({ name, avatarUrl }: { name: string | null | undefined; avatarUrl?: string | null }) {
+  const safeName = name ?? "?";
+  const ac = avatarColor(safeName);
+  if (avatarUrl) {
+    return <Image source={{ uri: avatarUrl }} style={{ width: 42, height: 42, borderRadius: 13, marginRight: 12 }} contentFit="cover" />;
+  }
+  return (
+    <View style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: ac.bg, alignItems: "center", justifyContent: "center", marginRight: 12 }}>
+      <Text style={{ fontSize: 14, fontWeight: "800", color: ac.text }}>{initials(safeName)}</Text>
+    </View>
+  );
 }
 
 export function GroupDetailScreen({ groupId, onBack }: Props) {
@@ -41,6 +58,7 @@ export function GroupDetailScreen({ groupId, onBack }: Props) {
 
   // Delete
   const [deleting, setDeleting] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const isOwner = group?.ownerId === userId;
 
@@ -119,6 +137,37 @@ export function GroupDetailScreen({ groupId, onBack }: Props) {
     );
   }
 
+  async function handlePickGroupAvatar() {
+    if (!isOwner) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    const mime = (asset.mimeType as "image/jpeg" | "image/png" | "image/webp") ?? "image/jpeg";
+    setUploadingAvatar(true);
+    try {
+      const { uploadUrl, key } = await apiClient.post<{ uploadUrl: string; key: string }>("/uploads/presign", {
+        purpose: "avatar", mime, size: asset.fileSize ?? 500_000,
+      });
+      const res = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": mime },
+        body: { uri: asset.uri, type: mime, name: "avatar" } as any,
+      });
+      if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+      const updated = await apiClient.patch<ApiGroup>(`/groups/${groupId}`, { avatarS3Key: key });
+      setGroup(updated);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Failed to upload image.");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
+
   function confirmDelete() {
     Alert.alert(
       "Delete Group",
@@ -154,13 +203,13 @@ export function GroupDetailScreen({ groupId, onBack }: Props) {
             <Text style={styles.title} numberOfLines={1}>
               {group?.name ?? "Group"}
             </Text>
-            {isOwner ? (
-              <Pressable hitSlop={12} onPress={() => { setRenameValue(group?.name ?? ""); setRenameVisible(true); }}>
-                <Ionicons name="pencil-outline" size={20} color={colors.primary} />
-              </Pressable>
-            ) : (
-              <View style={styles.headerSpacer} />
-            )}
+            <View style={styles.headerRight}>
+              {isOwner && (
+                <Pressable hitSlop={12} onPress={() => { setRenameValue(group?.name ?? ""); setRenameVisible(true); }}>
+                  <Ionicons name="pencil-outline" size={20} color={colors.primary} />
+                </Pressable>
+              )}
+            </View>
           </View>
 
           {loading || deleting ? (
@@ -169,9 +218,22 @@ export function GroupDetailScreen({ groupId, onBack }: Props) {
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
               {/* Hero card */}
               <View style={styles.heroCard}>
-                <View style={styles.heroAvatar}>
-                  <Text style={styles.heroAvatarText}>{initials(group.name)}</Text>
-                </View>
+                <Pressable style={styles.heroAvatarWrap} onPress={handlePickGroupAvatar} disabled={!isOwner || uploadingAvatar}>
+                  {group.avatarUrl ? (
+                    <Image source={{ uri: group.avatarUrl }} style={styles.heroAvatarImg} contentFit="cover" />
+                  ) : (
+                    <View style={styles.heroAvatar}>
+                      <Text style={styles.heroAvatarText}>{initials(group.name)}</Text>
+                    </View>
+                  )}
+                  {isOwner && (
+                    <View style={styles.heroAvatarOverlay}>
+                      {uploadingAvatar
+                        ? <ActivityIndicator color="#fff" size="small" />
+                        : <Ionicons name="camera" size={16} color="#fff" />}
+                    </View>
+                  )}
+                </Pressable>
                 <Text style={styles.heroName}>{group.name}</Text>
                 <View style={styles.heroBadgeRow}>
                   <View style={styles.heroBadge}>
@@ -201,9 +263,7 @@ export function GroupDetailScreen({ groupId, onBack }: Props) {
                 <View style={styles.membersList}>
                   {group.members.map((m, i) => (
                     <View key={m.userId} style={[styles.memberRow, i < group.members.length - 1 && styles.memberRowBorder]}>
-                      <View style={styles.memberAvatar}>
-                        <Text style={styles.memberAvatarText}>{initials(m.user.displayName ?? "?")}</Text>
-                      </View>
+                      <MemberAvatar name={m.user.displayName} avatarUrl={m.user.avatarUrl} />
                       <Text style={styles.memberName}>{m.user.displayName}</Text>
                       {m.userId === group.ownerId && (
                         <Text style={styles.ownerTag}>Owner</Text>
@@ -311,6 +371,7 @@ const styles = StyleSheet.create({
   back: { fontSize: 15, fontWeight: "600", color: colors.primary, minWidth: 64 },
   title: { flex: 1, fontSize: 22, fontWeight: "800", color: colors.textPrimary, textAlign: "center", letterSpacing: -0.5 },
   headerSpacer: { minWidth: 64 },
+  headerRight: { minWidth: 64, alignItems: "flex-end" },
   spinner: { marginTop: 60 },
   content: { paddingBottom: 40, gap: 24 },
 
@@ -320,11 +381,19 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
     shadowColor: "#000", shadowOpacity: 0.04, shadowOffset: { width: 0, height: 3 }, shadowRadius: 10,
   },
+  heroAvatarWrap: { width: 80, height: 80, marginBottom: 4 },
+  heroAvatarImg: { width: 80, height: 80, borderRadius: 24 },
   heroAvatar: {
     width: 80, height: 80, borderRadius: 24, backgroundColor: colors.primaryLight,
-    alignItems: "center", justifyContent: "center", marginBottom: 4,
+    alignItems: "center", justifyContent: "center",
   },
   heroAvatarText: { fontSize: 30, fontWeight: "800", color: colors.primaryDark },
+  heroAvatarOverlay: {
+    position: "absolute", bottom: -4, right: -4,
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: colors.primary, alignItems: "center", justifyContent: "center",
+    borderWidth: 2, borderColor: colors.surface,
+  },
   heroName: { fontSize: 24, fontWeight: "800", color: colors.textPrimary, letterSpacing: -0.5 },
   heroBadgeRow: { flexDirection: "row", gap: 8, marginTop: 2 },
   heroBadge: { backgroundColor: colors.surfaceSecondary, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
