@@ -255,8 +255,8 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
       Alert.alert("Error", "Select at least one friend or enable Invite via link.");
       return;
     }
-    const totalPeople = selectedIds.size;
-    const evenAmount = totalPeople > 0 ? billAmount / totalPeople : billAmount;
+    const totalPeople = selectedIds.size + 1; // +1 for the tab creator
+    const evenAmount = billAmount / totalPeople;
     const rows: ParticipantRow[] = [];
     for (const id of selectedIds) {
       const f = friends.find((fr) => otherUser(fr, userId!).id === id);
@@ -279,7 +279,7 @@ export function CreateTabFlow({ onBack, onComplete }: CreateTabFlowProps) {
   function handleSplitTypeChange(type: "even" | "custom") {
     setSplitType(type);
     if (type === "even" && participants.length > 0) {
-      const each = billAmount / participants.length;
+      const each = billAmount / (participants.length + 1); // +1 for the tab creator
       setParticipants(participants.map((p) => ({ ...p, amountStr: each.toFixed(2) })));
     }
   }

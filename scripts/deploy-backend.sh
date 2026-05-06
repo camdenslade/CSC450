@@ -14,7 +14,7 @@ DEPLOY_ENV="${ROOT_DIR}/scripts/deploy.env"
 
 SSH_KEY="${SSH_KEY:-$ROOT_DIR/tabup-key.pem}"
 REMOTE_USER="${REMOTE_USER:-ubuntu}"
-REMOTE_HOST="${REMOTE_HOST:-3.80.28.75}"
+REMOTE_HOST="${REMOTE_HOST:-44.222.253.59}"
 REMOTE_SERVICE="${REMOTE_SERVICE:-tabup-api}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 REMOTE_DIR="${REMOTE_DIR:-/home/ubuntu/tabup}"
